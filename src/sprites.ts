@@ -459,7 +459,43 @@ const ICONS: Record<string, { rows: string[]; pal: Palette }> = {
     rows: ['..GGGG..', '.G....G.', 'G......G', 'G...GGGG', 'G....GG.', '.G....G.', '..GGGG..'],
     pal: { G: '#9fd8ff' },
   },
+  axe: {
+    rows: ['..SSSS....', '.SWWSSS...', '.SSSSSSH..', '..SSSSHH..', '....HH....', '...HH.....', '..HH......', '.HH.......', 'HH........'],
+    pal: { S: '#c8ccd8', W: '#ffffff', H: '#8a5a2a' },
+  },
+  cross: {
+    rows: ['...WW...', '...WW...', 'WWWWWWWW', 'WWWYYWWW', '...WW...', '...WW...', '...WW...', '...WW...'],
+    pal: { W: '#e8f0ff', Y: '#ffd36b' },
+  },
+  luck: {
+    rows: ['.GG..GG.', 'GGGGGGGG', 'GGGGGGGG', '.GGGGGG.', 'GGGGGGGG', 'GGGGGGGG', '.GG.kGG.', '....k...', '...k....'],
+    pal: { G: '#5adf5a', k: '#2a7a2a' },
+  },
+  amount: {
+    rows: ['.YYYYYY.', 'YBBBBBBY', 'YBWBBBBY', 'YBBWBBBY', 'YBBBBBBY', 'YBBBBBBY', '.YYYYYY.', '...YY...', '..YYYY..'],
+    pal: { Y: '#c8a0ff', B: '#5a4a9a', W: '#e8e0ff' },
+  },
+  limit: {
+    rows: ['....Y....', '...YYY...', 'YYYYWYYYY', '.YYYYYYY.', '..YYYYY..', '.YYY.YYY.', 'YY.....YY'],
+    pal: { Y: '#ffd36b', W: '#fff8d0' },
+  },
+  synergy: {
+    rows: ['.PP..CC.', 'P..PC..C', 'P..CP..C', 'P..CP..C', 'P..PC..C', '.PP..CC.'],
+    pal: { P: '#ff8a7a', C: '#7cc8ff' },
+  },
+  'relic-berserk': relic('#ffb0b8', '#ff3a50', '#8a1020'),
+  'relic-hourglass': relic('#d0f8ff', '#3ac8f0', '#16608a'),
+  'relic-phoenix': relic('#ffe0b0', '#ff8a2a', '#9a3a10'),
+  'relic-gale': relic('#ffffff', '#b8c2d4', '#5a6478'),
+  'relic-compass': relic('#e8d8ff', '#9a6aff', '#4a2a9a'),
 };
+
+function relic(hi: string, base: string, dark: string) {
+  return {
+    rows: ['..YYYY..', '.YAAAAY.', 'YAWBBBaY', 'YABBBBaY', 'YABBBBaY', 'YaBBBaaY', '.YaaaaY.', '..YYYY..'],
+    pal: { Y: '#ffd36b', A: hi, W: '#ffffff', B: base, a: dark },
+  };
+}
 
 const iconCache = new Map<string, string>();
 export function iconUrl(id: string): string {
