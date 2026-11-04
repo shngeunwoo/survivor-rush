@@ -84,6 +84,12 @@ export const sfx = {
   whip: () => noise('whip', 0.1, 0.09, 0.06, 6000),
   fire: () => noise('fire', 0.2, 0.35, 0.07, 700),
   shoot: () => tone('shoot', 0.06, 700, 0.07, 'triangle', 0.025, 1200),
+  boom: () => {
+    noise('boom', 0.12, 0.35, 0.16, 500);
+    tone('boomt', 0.12, 120, 0.25, 'sine', 0.08, 40);
+  },
+  ice: () => tone('ice', 0.12, 1800, 0.12, 'triangle', 0.03, 2600),
+  beam: () => tone('beam', 0.15, 440, 0.3, 'sawtooth', 0.025, 880),
   levelUp: () => {
     [523, 659, 784, 1047].forEach((f, i) => tone(`lv${i}`, 0, f, 0.16, 'square', 0.04, undefined, i * 0.07));
   },
