@@ -4,20 +4,34 @@ let musicBus: GainNode | null = null;
 let sfxOn = localStorage.getItem('vs-sfx') !== '0';
 let musicOn = localStorage.getItem('vs-music') !== '0';
 const lastPlayed: Record<string, number> = {};
+const SFX_VOL = 5;
+const MUSIC_VOL = 2.6;
 
 function ac(): AudioContext | null {
   if (!ctx) {
     try {
+      // iOS: play through the ringer/silent switch like a media app
+      const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+      if (session) session.type = 'playback';
       ctx = new AudioContext();
     } catch {
       return null;
     }
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -16;
+    comp.knee.value = 10;
+    comp.ratio.value = 6;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.25;
+    const master = ctx.createGain();
+    master.gain.value = 0.9;
+    comp.connect(master).connect(ctx.destination);
     sfxBus = ctx.createGain();
-    sfxBus.gain.value = sfxOn ? 1 : 0;
-    sfxBus.connect(ctx.destination);
+    sfxBus.gain.value = sfxOn ? SFX_VOL : 0;
+    sfxBus.connect(comp);
     musicBus = ctx.createGain();
-    musicBus.gain.value = musicOn ? 1 : 0;
-    musicBus.connect(ctx.destination);
+    musicBus.gain.value = musicOn ? MUSIC_VOL : 0;
+    musicBus.connect(comp);
   }
   if (ctx.state === 'suspended') void ctx.resume();
   return ctx;
@@ -166,12 +180,16 @@ function schedule() {
   while (nextTime < ctx.currentTime + 0.2) {
     const bar = PROGRESSION[Math.floor(step / 8) % PROGRESSION.length];
     const s = step % 8;
-    if (s % 4 === 0) note(bar.bass, nextTime, STEP * 3.5, 'triangle', 0.11);
+    if (s % 4 === 0) {
+      note(bar.bass, nextTime, STEP * 3.5, 'triangle', 0.09);
+      // octave-up bass so phone and laptop speakers still carry the line
+      note(bar.bass * 2, nextTime, STEP * 3, 'square', 0.03);
+    }
     if (s % 2 === 0 && intensity > 0) kick(nextTime);
-    note(bar.arp[s], nextTime, STEP * 0.9, 'square', 0.014);
+    note(bar.arp[s], nextTime, STEP * 0.9, 'square', 0.03);
     if (intensity > 1) {
       const lead = LEAD[step % LEAD.length];
-      if (lead) note(lead, nextTime, STEP * 1.8, 'sawtooth', 0.012);
+      if (lead) note(lead, nextTime, STEP * 1.8, 'sawtooth', 0.028);
     }
     nextTime += STEP;
     step++;
@@ -207,12 +225,12 @@ export function isMusicOn() {
 export function setSfx(v: boolean) {
   sfxOn = v;
   localStorage.setItem('vs-sfx', v ? '1' : '0');
-  if (sfxBus) sfxBus.gain.value = v ? 1 : 0;
+  if (sfxBus) sfxBus.gain.value = v ? SFX_VOL : 0;
 }
 export function setMusic(v: boolean) {
   musicOn = v;
   localStorage.setItem('vs-music', v ? '1' : '0');
-  if (musicBus) musicBus.gain.value = v ? 1 : 0;
+  if (musicBus) musicBus.gain.value = v ? MUSIC_VOL : 0;
 }
 export function unlockAudio() {
   ac();
