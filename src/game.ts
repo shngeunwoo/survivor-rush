@@ -17,7 +17,7 @@ import {
   type WeaponId,
 } from './upgrades';
 
-type EnemyKind = 'bat' | 'zombie' | 'skeleton' | 'ghost' | 'witch' | 'golem' | 'reaper';
+type EnemyKind = 'bat' | 'zombie' | 'skeleton' | 'ghost' | 'witch' | 'slime' | 'slimeling' | 'knight' | 'golem' | 'reaper';
 
 interface EnemyDef {
   r: number;
@@ -35,6 +35,9 @@ const ENEMY_DEFS: Record<EnemyKind, EnemyDef> = {
   skeleton: { r: 13, hp: 34, speed: 74, dmg: 10, xp: 3, knock: 0.9, color: '#e8e2d0' },
   ghost: { r: 13, hp: 26, speed: 128, dmg: 8, xp: 3, knock: 1.2, color: '#cdeef8' },
   witch: { r: 13, hp: 40, speed: 62, dmg: 6, xp: 5, knock: 0.8, color: '#b070ff' },
+  slime: { r: 15, hp: 30, speed: 58, dmg: 7, xp: 2, knock: 0.9, color: '#5adf8a' },
+  slimeling: { r: 9, hp: 9, speed: 92, dmg: 4, xp: 1, knock: 1.1, color: '#5adf8a' },
+  knight: { r: 15, hp: 95, speed: 52, dmg: 14, xp: 6, knock: 0.3, color: '#8a94a8' },
   golem: { r: 28, hp: 320, speed: 46, dmg: 15, xp: 25, knock: 0.15, color: '#b0a090' },
   reaper: { r: 34, hp: 3000, speed: 76, dmg: 25, xp: 150, knock: 0, color: '#ff2a3d' },
 };
@@ -58,10 +61,15 @@ interface Enemy {
   anim: number;
   face: number;
   shoot: number;
+  slow: number;
+  frozen: number;
+  dash: number;
+  dx: number;
+  dy: number;
 }
 
 interface Projectile {
-  kind: 'orb' | 'axe' | 'cross';
+  kind: 'orb' | 'axe' | 'cross' | 'ice' | 'wisp';
   src: WeaponId;
   x: number;
   y: number;
@@ -82,6 +90,21 @@ interface Projectile {
   span: number;
   turned: boolean;
   spin: number;
+  target: Enemy | null;
+  retarget: number;
+}
+
+interface Bomb {
+  sx: number;
+  sy: number;
+  tx: number;
+  ty: number;
+  t: number;
+  dur: number;
+  r: number;
+  dmg: number;
+  evo: boolean;
+  mini: boolean;
 }
 
 interface EnemyShot {
@@ -151,7 +174,7 @@ interface Decal {
 }
 
 interface Fx {
-  kind: 'bolt' | 'slash' | 'ring' | 'corpse' | 'nova';
+  kind: 'bolt' | 'slash' | 'ring' | 'corpse' | 'nova' | 'beam';
   x: number;
   y: number;
   life: number;
@@ -292,6 +315,7 @@ export class Game {
   private projectiles: Projectile[] = [];
   private enemyShots: EnemyShot[] = [];
   private zones: Zone[] = [];
+  private bombs: Bomb[] = [];
   private pickups: Pickup[] = [];
   private texts: FloatText[] = [];
   private particles: Particle[] = [];
@@ -382,6 +406,7 @@ export class Game {
     this.projectiles = [];
     this.enemyShots = [];
     this.zones = [];
+    this.bombs = [];
     this.pickups = [];
     this.texts = [];
     this.particles = [];
@@ -496,6 +521,8 @@ export class Game {
       ['이동 속도', `${Math.round((this.moveSpeed / 165) * 100)}%`],
       ['방어', `${this.armor}`],
       ['회복', `${this.regen.toFixed(1)}/초`],
+      ['지속시간', `${Math.round(this.durMult * 100)}%`],
+      ['경험치', `${Math.round(this.xpMult * 100)}%`],
       ['획득 범위', `${Math.round(this.magnet)}`],
     ];
   }
@@ -524,10 +551,10 @@ export class Game {
     return (1 - 0.08 * this.pl('haste')) * this.ch.cd * (this.relics.has('hourglass') ? 0.85 : 1);
   }
   private get areaMult() {
-    return (1 + 0.1 * this.pl('area')) * (this.relics.has('compass') ? 1.2 : 1);
+    return (1 + 0.1 * this.pl('area')) * (this.relics.has('compass') ? 1.2 : 1) * (this.relics.has('eclipse') ? 1.1 : 1);
   }
   private get moveSpeed() {
-    return 165 * (1 + 0.1 * this.pl('speed')) * (1 + 0.04 * this.meta('speed')) * this.ch.speed * (this.relics.has('gale') ? 1.15 : 1);
+    return 165 * (1 + 0.1 * this.pl('speed')) * (1 + 0.04 * this.meta('speed')) * this.ch.speed * (this.relics.has('gale') ? 1.15 : 1) * (this.relics.has('gambler') ? 1.1 : 1);
   }
   private get magnet() {
     return 70 * (1 + 0.3 * this.pl('magnet')) * (1 + 0.15 * this.meta('magnet')) * (this.relics.has('compass') ? 2 : 1);
@@ -542,7 +569,16 @@ export class Game {
     return this.pl('amount') + (this.relics.has('hourglass') ? 1 : 0);
   }
   private get critChance() {
-    return 0.08 + 0.04 * this.pl('luck') + (this.relics.has('berserk') ? 0.1 : 0);
+    return 0.08 + 0.04 * this.pl('luck') + (this.relics.has('berserk') ? 0.1 : 0) + (this.relics.has('gambler') ? 0.08 : 0);
+  }
+  private get durMult() {
+    return (1 + 0.12 * this.pl('duration')) * (this.relics.has('eclipse') ? 1.3 : 1);
+  }
+  private get xpMult() {
+    return (1 + 0.08 * this.pl('wisdom') + 0.08 * this.meta('growth')) * (this.relics.has('sage') ? 1.25 : 1);
+  }
+  private get goldMult() {
+    return (1 + 0.15 * this.meta('gold')) * (this.relics.has('sage') ? 1.25 : 1);
   }
   private get critMult() {
     return this.relics.has('berserk') ? 3 : 2;
@@ -552,6 +588,7 @@ export class Game {
     if (id === 'aura' && this.synergies.has('purgatory')) m *= 1.5;
     if (id === 'whip' && this.synergies.has('bladestorm')) m *= 1.3;
     if ((id === 'axe' || id === 'cross') && this.synergies.has('crusade')) m *= 1.4;
+    if (id === 'orbit' && this.synergies.has('wraith')) m *= 1.3;
     return m;
   }
 
@@ -645,6 +682,7 @@ export class Game {
     this.updateProjectiles(dt);
     this.updateEnemyShots(dt);
     this.updateZones(dt);
+    this.updateBombs(dt);
     this.updatePickups(dt);
     this.updateParticles(dt);
 
@@ -709,7 +747,7 @@ export class Game {
     this.emitHud();
     if (victory) sfx.victory();
     else sfx.gameOver();
-    const goldMult = 1 + 0.15 * this.meta('gold');
+    const goldMult = this.goldMult;
     this.onEnd({
       victory,
       time: this.time,
@@ -737,7 +775,7 @@ export class Game {
       xpNeed: xpForLevel(this.level),
       time: this.time,
       kills: this.kills,
-      gold: Math.round(this.gold * (1 + 0.15 * this.meta('gold'))),
+      gold: Math.round(this.gold * this.goldMult),
       boss: boss ? boss.hp / boss.maxHp : -1,
       weapons: [...this.weapons.entries()].map(([id, lv]) => [id, lv, this.evolved.has(id), this.limits.get(id) ?? 0]),
       passives: [...this.passives.entries()],
@@ -757,10 +795,10 @@ export class Game {
     const t = this.time;
     const r = Math.random();
     if (t < 50) return r < 0.75 ? 'bat' : 'zombie';
-    if (t < 120) return r < 0.4 ? 'bat' : r < 0.8 ? 'zombie' : 'skeleton';
-    if (t < 200) return r < 0.25 ? 'bat' : r < 0.5 ? 'zombie' : r < 0.8 ? 'skeleton' : r < 0.92 ? 'ghost' : 'witch';
-    if (t < 400) return r < 0.15 ? 'bat' : r < 0.35 ? 'zombie' : r < 0.62 ? 'skeleton' : r < 0.86 ? 'ghost' : 'witch';
-    return r < 0.1 ? 'bat' : r < 0.25 ? 'zombie' : r < 0.55 ? 'skeleton' : r < 0.82 ? 'ghost' : 'witch';
+    if (t < 120) return r < 0.35 ? 'bat' : r < 0.65 ? 'zombie' : r < 0.85 ? 'slime' : 'skeleton';
+    if (t < 240) return r < 0.2 ? 'bat' : r < 0.4 ? 'zombie' : r < 0.55 ? 'slime' : r < 0.8 ? 'skeleton' : r < 0.92 ? 'ghost' : 'witch';
+    if (t < 400) return r < 0.12 ? 'bat' : r < 0.27 ? 'zombie' : r < 0.4 ? 'slime' : r < 0.58 ? 'skeleton' : r < 0.75 ? 'ghost' : r < 0.86 ? 'witch' : 'knight';
+    return r < 0.08 ? 'bat' : r < 0.2 ? 'zombie' : r < 0.32 ? 'slime' : r < 0.5 ? 'skeleton' : r < 0.68 ? 'ghost' : r < 0.8 ? 'witch' : 'knight';
   }
 
   private spawnPos(): [number, number] {
@@ -796,6 +834,11 @@ export class Game {
       anim: Math.random() * 10,
       face: 1,
       shoot: 1 + Math.random() * 2,
+      slow: 0,
+      frozen: 0,
+      dash: 0,
+      dx: 0,
+      dy: 0,
     };
     this.enemies.push(e);
     return e;
@@ -910,7 +953,23 @@ export class Game {
           this.enemyShots.push({ x: e.x, y: e.y - 8, vx: (dx / d) * sp, vy: (dy / d) * sp, r: 7, dmg: 7 * (1 + this.time / 400), life: 4 });
         }
       }
+      if (e.kind === 'knight') {
+        e.shoot -= dt;
+        if (e.dash > 0) {
+          e.dash -= dt;
+          mx = e.dx;
+          my = e.dy;
+          speed *= 4.2;
+        } else if (e.shoot <= 0 && d < 320) {
+          e.shoot = 3.5;
+          e.dash = 0.45;
+          e.dx = dx / d;
+          e.dy = dy / d;
+        }
+      }
       if (e.kind === 'reaper' && d > 500) speed *= 2.2;
+      if (e.frozen > this.time) speed = 0;
+      else if (e.slow > this.time) speed *= 0.5;
 
       e.x += mx * speed * dt + e.kx * dt;
       e.y += my * speed * dt + e.ky * dt;
@@ -964,7 +1023,8 @@ export class Game {
   private hitEnemy(e: Enemy, dmg: number, fromX: number, fromY: number, knock: number, src: WeaponId | null) {
     if (e.dead) return;
     const crit = Math.random() < this.critChance;
-    const amount = dmg * this.might * (src ? this.weaponMult(src) : 1) * (0.9 + Math.random() * 0.2) * (crit ? this.critMult : 1);
+    const chilled = this.synergies.has('superconduct') && e.slow > this.time ? 1.5 : 1;
+    const amount = dmg * this.might * (src ? this.weaponMult(src) : 1) * chilled * (0.9 + Math.random() * 0.2) * (crit ? this.critMult : 1);
     e.hp -= amount;
     e.flash = 0.09;
     if (src) this.damageBy.set(src, (this.damageBy.get(src) ?? 0) + Math.min(amount, e.hp + amount));
@@ -1051,6 +1111,8 @@ export class Game {
       setIntensity(1);
     } else if (e.kind === 'golem') {
       this.pickups.push(this.mkPickup(e.x, e.y, 'chest', 1));
+    } else if (e.kind === 'slime' && this.enemies.length < MAX_ENEMIES) {
+      for (const off of [-12, 12]) this.spawnEnemy('slimeling', e.x + off, e.y + (Math.random() - 0.5) * 10);
     }
     this.dropGem(e.x, e.y, e.xp);
     const r = Math.random();
@@ -1130,7 +1192,7 @@ export class Game {
       const evo = this.evolved.has('wand');
       const cd = evo ? 0.22 : Math.max(0.35, 1.0 - 0.07 * (wand - 1));
       if (this.tickTimer('wand', dt, cd)) {
-        const count = (evo ? 4 : 1 + (wand >= 3 ? 1 : 0) + (wand >= 6 ? 1 : 0)) + this.amount;
+        const count = (evo ? 4 : 1 + (wand >= 3 ? 1 : 0) + (wand >= 6 ? 1 : 0)) + this.amount + (this.synergies.has('prism') ? 2 : 0);
         const dmg = 12 + 5 * (Math.min(wand, 2) - 1) + (wand >= 4 ? 5 : 0) + (wand >= 7 ? 5 : 0) + (evo ? 12 : 0);
         const pierce = evo ? 6 : 1 + (wand >= 5 ? 1 : 0) + (wand >= 8 ? 1 : 0);
         const targets = this.nearestEnemies(count, 650);
@@ -1204,6 +1266,7 @@ export class Game {
         for (let i = 0; i < strikes && visible.length > 0; i++) {
           const t = visible.splice(Math.floor(Math.random() * visible.length), 1)[0];
           this.strike(t.x, t.y, r, dmg, 'lightning');
+          if (this.synergies.has('superconduct')) this.query(t.x, t.y, r, (e) => this.chill(e, 2, 0.5));
           struck++;
         }
         if (struck) {
@@ -1247,7 +1310,7 @@ export class Game {
         const count = 1 + (fire >= 4 ? 1 : 0) + (fire >= 8 ? 1 : 0) + (evo ? 2 : 0) + this.amount;
         const r = (45 + (fire >= 3 ? 12 : 0) + (fire >= 6 ? 12 : 0)) * area * (evo ? 1.5 : 1);
         const dps = (16 + (fire >= 2 ? 8 : 0) + (fire >= 5 ? 8 : 0) + (fire >= 7 ? 8 : 0)) * (evo ? 1.6 : 1);
-        const dur = 2.6 + (fire >= 2 ? 0.5 : 0) + (fire >= 5 ? 0.5 : 0) + (evo ? 1 : 0);
+        const dur = (2.6 + (fire >= 2 ? 0.5 : 0) + (fire >= 5 ? 0.5 : 0) + (evo ? 1 : 0)) * this.durMult;
         const targets = this.nearestEnemies(14, 400);
         for (let i = 0; i < count; i++) {
           const t = targets.length ? targets[Math.floor(Math.random() * targets.length)] : null;
@@ -1311,6 +1374,132 @@ export class Game {
         sfx.shoot();
       }
     }
+
+    const frost = this.weapons.get('frost');
+    if (frost) {
+      const evo = this.evolved.has('frost');
+      if (this.tickTimer('frost', dt, evo ? 1.1 : frost >= 7 ? 1.3 : 1.6)) {
+        const n = evo ? 20 : 6 + (frost >= 2 ? 2 : 0) + (frost >= 5 ? 2 : 0) + (frost >= 8 ? 2 : 0) + this.amount * 2;
+        const dmg = (8 + (frost >= 3 ? 6 : 0) + (frost >= 6 ? 6 : 0) + (frost >= 8 ? 6 : 0)) * (evo ? 1.5 : 1);
+        const pierce = evo ? 3 : 1 + (frost >= 6 ? 1 : 0);
+        const off = this.clock * 2.3;
+        for (let i = 0; i < n; i++) {
+          const a = off + (i / n) * Math.PI * 2;
+          this.projectiles.push(this.mkProjectile('ice', 'frost', p.x, p.y - 4, Math.cos(a) * 380, Math.sin(a) * 380, 7 * area * (evo ? 1.3 : 1), dmg, pierce, 0.9 * this.durMult, evo));
+        }
+        sfx.ice();
+      }
+    }
+
+    const beam = this.weapons.get('beam');
+    if (beam) {
+      const evo = this.evolved.has('beam');
+      if (this.tickTimer('beam', dt, evo ? 0.45 : beam >= 8 ? 1.8 : 2.2)) {
+        const prism = this.synergies.has('prism') ? 2 : 0;
+        const dmg = (20 + (beam >= 2 ? 8 : 0) + (beam >= 5 ? 8 : 0) + (beam >= 8 ? 8 : 0)) * (evo ? 0.6 : 1);
+        const len = (evo ? 520 : 300 + (beam >= 3 ? 80 : 0)) * area;
+        const width = (evo ? 22 : 10 + (beam >= 6 ? 6 : 0)) * area;
+        const n = (evo ? 4 : 1 + (beam >= 4 ? 1 : 0) + (beam >= 7 ? 1 : 0)) + prism + this.amount;
+        let base: number;
+        if (evo) base = this.clock * 1.2;
+        else {
+          const t = this.nearestEnemies(1, 600)[0];
+          base = t ? Math.atan2(t.y - p.y, t.x - p.x) : Math.atan2(p.dirY, p.dirX);
+        }
+        for (let i = 0; i < n; i++) {
+          const a = evo ? base + (i / n) * Math.PI * 2 : base + (i - (n - 1) / 2) * 0.35;
+          this.fireBeam(p.x, p.y - 6, a, len, width, dmg, evo);
+        }
+        if (!evo || Math.floor(this.clock * 2) % 2 === 0) sfx.beam();
+      }
+    }
+
+    const spirit = this.weapons.get('spirit');
+    if (spirit) {
+      const evo = this.evolved.has('spirit');
+      if (this.tickTimer('spirit', dt, evo ? 0.9 : 1.5)) {
+        const n =
+          (evo ? 8 : 1 + (spirit >= 2 ? 1 : 0) + (spirit >= 4 ? 1 : 0) + (spirit >= 6 ? 1 : 0) + (spirit >= 8 ? 2 : 0)) +
+          this.amount +
+          (this.synergies.has('wraith') ? 3 : 0);
+        const dmg = (12 + (spirit >= 3 ? 5 : 0) + (spirit >= 7 ? 5 : 0)) * (evo ? 1.4 : 1);
+        const pierce = evo ? 2 : 1 + (spirit >= 5 ? 1 : 0);
+        const sp = spirit >= 7 || evo ? 320 : 260;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + Math.random() * 0.4;
+          this.projectiles.push(this.mkProjectile('wisp', 'spirit', p.x, p.y - 6, Math.cos(a) * sp, Math.sin(a) * sp, 8 * area, dmg, pierce, 3 * this.durMult, evo));
+        }
+      }
+    }
+
+    const bomb = this.weapons.get('bomb');
+    if (bomb) {
+      const evo = this.evolved.has('bomb');
+      if (this.tickTimer('bomb', dt, evo ? 2 : bomb >= 6 ? 2.2 : 2.8)) {
+        const n = 1 + (bomb >= 4 ? 1 : 0) + (bomb >= 7 ? 1 : 0) + this.amount;
+        const dmg = (30 + (bomb >= 2 ? 12 : 0) + (bomb >= 5 ? 12 : 0) + (bomb >= 8 ? 12 : 0)) * (evo ? 1.4 : 1);
+        const r = (60 + (bomb >= 3 ? 15 : 0) + (bomb >= 8 ? 15 : 0)) * area;
+        const targets = this.nearestEnemies(10, 450);
+        for (let i = 0; i < n; i++) {
+          const t = targets.length ? targets[Math.floor(Math.random() * targets.length)] : null;
+          const a = Math.random() * Math.PI * 2;
+          const tx = t ? t.x : p.x + Math.cos(a) * 160;
+          const ty = t ? t.y : p.y + Math.sin(a) * 160;
+          this.bombs.push({ sx: p.x, sy: p.y - 10, tx, ty, t: 0, dur: 0.55, r, dmg, evo, mini: false });
+        }
+        sfx.whip();
+      }
+    }
+  }
+
+  private chill(e: Enemy, slow: number, freeze: number) {
+    e.slow = Math.max(e.slow, this.time + slow * this.durMult);
+    if (freeze > 0 && e.kind !== 'reaper') e.frozen = Math.max(e.frozen, this.time + freeze * this.durMult);
+  }
+
+  private fireBeam(x: number, y: number, a: number, len: number, width: number, dmg: number, evo: boolean) {
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const hit = new Set<number>();
+    const step = Math.max(12, width * 1.2);
+    for (let d = step / 2; d < len; d += step) {
+      this.query(x + ca * d, y + sa * d, width, (e) => {
+        if (hit.has(e.id)) return;
+        hit.add(e.id);
+        this.hitEnemy(e, dmg, x, y, 90, 'beam');
+      });
+    }
+    this.fx.push({ kind: 'beam', x, y, life: evo ? 0.3 : 0.25 * this.durMult, max: evo ? 0.3 : 0.25 * this.durMult, dir: a, len, r: width, color: evo ? '#ffe9a0' : '#fff6c0', seed: 0 });
+  }
+
+  private updateBombs(dt: number) {
+    const fresh: Bomb[] = [];
+    for (const b of this.bombs) {
+      b.t += dt;
+      if (b.t < b.dur) continue;
+      this.query(b.tx, b.ty, b.r, (e) => this.hitEnemy(e, b.dmg, b.tx, b.ty, 300, 'bomb'));
+      this.fx.push({ kind: 'nova', x: b.tx, y: b.ty, life: 0.35, max: 0.35, dir: 0, len: 0, r: b.r, color: '#ffb060', seed: 0 });
+      for (let k = 0; k < (b.mini ? 8 : 18) && this.particles.length < 800; k++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = 80 + Math.random() * 260;
+        this.particles.push({ x: b.tx, y: b.ty, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.45, max: 0.45, color: Math.random() < 0.5 ? '#ffd060' : '#ff6a30', size: 3 + Math.random() * 3, grav: 0, glow: true });
+      }
+      if (this.synergies.has('napalm') && !b.mini) {
+        const dur = 2 * this.durMult;
+        this.zones.push({ x: b.tx, y: b.ty, r: b.r * 0.8, dps: 22, life: dur, maxLife: dur, tick: 0, evo: false });
+      }
+      if (b.evo && !b.mini) {
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + Math.random();
+          const tx = b.tx + Math.cos(a) * b.r * 1.1;
+          const ty = b.ty + Math.sin(a) * b.r * 1.1;
+          fresh.push({ sx: b.tx, sy: b.ty, tx, ty, t: 0, dur: 0.2, r: b.r * 0.6, dmg: b.dmg * 0.5, evo: true, mini: true });
+        }
+      }
+      this.shake = Math.max(this.shake, b.mini ? 2 : 5);
+      sfx.boom();
+    }
+    this.bombs = this.bombs.filter((b) => b.t < b.dur).concat(fresh);
   }
 
   private strike(tx: number, ty: number, r: number, dmg: number, src: WeaponId) {
@@ -1359,6 +1548,8 @@ export class Game {
       span: life,
       turned: false,
       spin: Math.random() * 6,
+      target: null,
+      retarget: 0,
     };
   }
 
@@ -1375,6 +1566,33 @@ export class Game {
           const vx = pr.vx * c - pr.vy * sn;
           pr.vy = pr.vx * sn + pr.vy * c;
           pr.vx = vx;
+        }
+      } else if (pr.kind === 'wisp') {
+        pr.retarget -= dt;
+        if (!pr.target || pr.target.dead || pr.retarget <= 0) {
+          pr.retarget = 0.3;
+          let best: Enemy | null = null;
+          let bd = Infinity;
+          this.query(pr.x, pr.y, 380, (e) => {
+            if (pr.hit.has(e.id)) return;
+            const d = (e.x - pr.x) ** 2 + (e.y - pr.y) ** 2;
+            if (d < bd) {
+              bd = d;
+              best = e;
+            }
+          });
+          pr.target = best;
+        }
+        if (pr.age > 0.15 && pr.target) {
+          const dx = pr.target.x - pr.x;
+          const dy = pr.target.y - pr.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const k = Math.min(1, dt * 7);
+          pr.vx += ((dx / d) * pr.speed0 - pr.vx) * k;
+          pr.vy += ((dy / d) * pr.speed0 - pr.vy) * k;
+        }
+        if (this.particles.length < 700 && Math.random() < 0.5) {
+          this.particles.push({ x: pr.x, y: pr.y, vx: 0, vy: -20, life: 0.3, max: 0.3, color: pr.evo ? '#e8ffb0' : '#8aff7a', size: 3, grav: 0, glow: true });
         }
       } else if (pr.kind === 'cross') {
         const f = pr.speed0 * (1 - (2 * pr.age) / pr.span);
@@ -1397,6 +1615,11 @@ export class Game {
         pr.hit.add(e.id);
         pr.pierce--;
         this.hitEnemy(e, pr.dmg, pr.x - pr.vx * 0.05, pr.y - pr.vy * 0.05, 150, pr.src);
+        if (pr.kind === 'ice') this.chill(e, this.weapons.get('frost')! >= 4 ? 2.5 : 1.5, pr.evo ? 1 : 0);
+        if (pr.kind === 'wisp') {
+          pr.target = null;
+          if (pr.evo) this.lifesteal(0.3);
+        }
         if (storm && pr.src === 'wand' && Math.random() < 0.25) this.strike(e.x, e.y, 40 * this.areaMult, 30, 'wand');
       });
     }
@@ -1475,7 +1698,7 @@ export class Game {
     const p = this.player;
     if (pk.kind === 'gem') {
       sfx.pickup();
-      this.xp += pk.value * (1 + 0.08 * this.meta('growth'));
+      this.xp += pk.value * this.xpMult;
       while (this.xp >= xpForLevel(this.level)) {
         this.xp -= xpForLevel(this.level);
         this.level++;
@@ -1613,6 +1836,7 @@ export class Game {
     this.drawOrbit();
     this.drawSlashes();
     this.drawProjectiles();
+    this.drawBombs();
     this.drawParticles(false);
     ctx.restore();
 
@@ -1786,6 +2010,18 @@ export class Game {
       ctx.translate(Math.round(e.x), Math.round(e.y - bob + (e.kind === 'bat' ? Math.sin(e.anim * 0.5) * 3 - 6 : 0)));
       if (e.face < 0) ctx.scale(-1, 1);
       ctx.drawImage(img, -spr.w / 2, -spr.h / 2);
+      const frozen = e.frozen > this.time;
+      if (frozen || e.slow > this.time) {
+        ctx.globalAlpha = frozen ? 0.6 : 0.3;
+        ctx.drawImage(spr.white[frame], -spr.w / 2, -spr.h / 2);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = frozen ? '#e0f8ff' : '#7ad8ff';
+        ctx.fillRect(-spr.w / 2 + 2, spr.h / 2 - 6, spr.w - 4, 3);
+      }
+      if (e.kind === 'knight' && e.dash > 0) {
+        ctx.globalAlpha = 0.5;
+        ctx.drawImage(spr.white[frame], -spr.w / 2 - e.dx * 8 * e.face, -spr.h / 2 - e.dy * 8);
+      }
       ctx.restore();
       ctx.globalAlpha = 1;
       if (e.kind === 'golem') this.hpBar(e, spr.h / 2 + 6, '#ffb347');
@@ -1898,11 +2134,25 @@ export class Game {
   private drawProjectiles() {
     const ctx = this.ctx;
     for (const pr of this.projectiles) {
-      if (pr.kind === 'orb') {
-        ctx.fillStyle = pr.evo ? '#fff6d0' : '#e8f6ff';
+      if (pr.kind === 'orb' || pr.kind === 'wisp') {
+        ctx.fillStyle = pr.kind === 'wisp' ? (pr.evo ? '#f4ffd0' : '#d8ffc8') : pr.evo ? '#fff6d0' : '#e8f6ff';
         ctx.beginPath();
         ctx.arc(pr.x, pr.y, pr.r * 0.7, 0, Math.PI * 2);
         ctx.fill();
+        continue;
+      }
+      if (pr.kind === 'ice') {
+        const a = Math.atan2(pr.vy, pr.vx);
+        ctx.save();
+        ctx.translate(pr.x, pr.y);
+        ctx.rotate(a);
+        ctx.fillStyle = '#0c0910';
+        ctx.fillRect(-pr.r * 1.4 - 1, -pr.r * 0.45 - 1, pr.r * 2.8 + 2, pr.r * 0.9 + 2);
+        ctx.fillStyle = pr.evo ? '#ffffff' : '#bff0ff';
+        ctx.fillRect(-pr.r * 1.4, -pr.r * 0.45, pr.r * 2.8, pr.r * 0.9);
+        ctx.fillStyle = '#4ac8f0';
+        ctx.fillRect(-pr.r * 1.4, 0, pr.r * 2.8, pr.r * 0.45);
+        ctx.restore();
         continue;
       }
       const k = pr.r / 14;
@@ -1935,6 +2185,28 @@ export class Game {
     }
   }
 
+  private drawBombs() {
+    const ctx = this.ctx;
+    for (const b of this.bombs) {
+      const t = Math.min(1, b.t / b.dur);
+      const x = b.sx + (b.tx - b.sx) * t;
+      const y = b.sy + (b.ty - b.sy) * t - Math.sin(t * Math.PI) * (b.mini ? 30 : 90);
+      const s = b.mini ? 5 : 8;
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.ellipse(b.tx, b.ty, b.r * t * 0.4, b.r * t * 0.25, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#0c0910';
+      ctx.fillRect(Math.round(x - s - 1), Math.round(y - s - 1), s * 2 + 2, s * 2 + 2);
+      ctx.fillStyle = '#4a4a5a';
+      ctx.fillRect(Math.round(x - s), Math.round(y - s), s * 2, s * 2);
+      ctx.fillStyle = '#9a9ab0';
+      ctx.fillRect(Math.round(x - s + 2), Math.round(y - s + 2), 3, 3);
+      ctx.fillStyle = Math.floor(this.clock * 20) % 2 ? '#ffd040' : '#ff6a30';
+      ctx.fillRect(Math.round(x + s - 2), Math.round(y - s - 4), 3, 3);
+    }
+  }
+
   private drawEnemyShots() {
     const ctx = this.ctx;
     for (const s of this.enemyShots) {
@@ -1951,8 +2223,18 @@ export class Game {
     const ctx = this.ctx;
     for (const pr of this.projectiles) {
       if (pr.kind === 'axe') continue;
-      const g = glow(pr.kind === 'cross' ? 'rgba(200,220,255,0.18)' : pr.evo ? 'rgba(255,220,120,0.9)' : 'rgba(110,190,255,0.9)');
-      const s = pr.r * (pr.kind === 'cross' ? 2.6 : 6);
+      const g = glow(
+        pr.kind === 'cross'
+          ? 'rgba(200,220,255,0.18)'
+          : pr.kind === 'ice'
+            ? 'rgba(120,220,255,0.45)'
+            : pr.kind === 'wisp'
+              ? 'rgba(130,255,110,0.85)'
+              : pr.evo
+                ? 'rgba(255,220,120,0.9)'
+                : 'rgba(110,190,255,0.9)',
+      );
+      const s = pr.r * (pr.kind === 'cross' ? 2.6 : pr.kind === 'ice' ? 3.5 : 6);
       ctx.drawImage(g, pr.x - s / 2, pr.y - s / 2, s, s);
     }
     for (const z of this.zones) {
@@ -1989,6 +2271,24 @@ export class Game {
         ctx.beginPath();
         ctx.arc(this.player.x, this.player.y, f.r * (1 - t) + 10, 0, Math.PI * 2);
         ctx.stroke();
+      } else if (f.kind === 'beam') {
+        const t = f.life / f.max;
+        const ex = f.x + Math.cos(f.dir) * f.len;
+        const ey = f.y + Math.sin(f.dir) * f.len;
+        ctx.lineCap = 'round';
+        for (const [w, col] of [
+          [f.r * 2.4, `rgba(255,210,90,${t * 0.35})`],
+          [f.r * 1.1, `rgba(255,240,170,${t * 0.8})`],
+          [f.r * 0.4, `rgba(255,255,255,${t})`],
+        ] as const) {
+          ctx.strokeStyle = col;
+          ctx.lineWidth = w * (0.6 + t * 0.4);
+          ctx.beginPath();
+          ctx.moveTo(f.x, f.y);
+          ctx.lineTo(ex, ey);
+          ctx.stroke();
+        }
+        ctx.lineCap = 'butt';
       } else if (f.kind === 'nova') {
         const t = f.life / f.max;
         ctx.strokeStyle = `rgba(255,240,180,${t})`;
@@ -2088,10 +2388,12 @@ export class Game {
       if (d.kind === 'candle') hole(d.x, d.y + 20, 120 + Math.sin(this.clock * 9 + d.x) * 8, 0.8);
     }
     for (const z of this.zones) hole(z.x, z.y, z.r * 2.2, 0.9);
-    for (const pr of this.projectiles) if (pr.kind !== 'axe') hole(pr.x, pr.y, 60, 0.5);
+    for (const pr of this.projectiles) if (pr.kind !== 'axe') hole(pr.x, pr.y, pr.kind === 'wisp' ? 80 : 60, 0.5);
+    for (const b of this.bombs) if (b.t >= b.dur - 0.05) hole(b.tx, b.ty, b.r * 2, 1);
     for (const f of this.fx) {
       if (f.kind === 'bolt') hole(f.x, f.y, 260 * (f.life / f.max), 1);
       if (f.kind === 'nova') hole(f.x, f.y, f.r * 1.5, f.life / f.max);
+      if (f.kind === 'beam') hole(f.x + Math.cos(f.dir) * f.len * 0.5, f.y + Math.sin(f.dir) * f.len * 0.5, f.len * 0.6, (f.life / f.max) * 0.8);
     }
     for (const pk of this.pickups) if (pk.kind === 'chest') hole(pk.x, pk.y, 90, 0.7);
     for (const e of this.enemies) if (e.kind === 'reaper') hole(e.x, e.y, 120, 0.5);
