@@ -5,14 +5,21 @@ import { Game, VICTORY_TIME, type ChestReward, type HudState, type RunResult } f
 import { heroPortrait, iconUrl } from './sprites';
 import {
   CHARACTERS,
+  LIMIT_BONUS,
+  LIMIT_DESC,
+  LIMIT_MAX,
   META,
   PASSIVES,
+  RELICS,
+  SYNERGIES,
   WEAPONS,
   describeChoice,
   metaCost,
   type CharacterDef,
   type Choice,
   type MetaId,
+  type RelicId,
+  type WeaponId,
 } from './upgrades';
 
 new FontFace('Galmuri', `url(${fontUrl})`)
@@ -57,6 +64,7 @@ app.innerHTML = `
       <div class="inventory">
         <div class="slots weapons"></div>
         <div class="slots passives"></div>
+        <div class="slots relics"></div>
       </div>
       <div class="hud-center">
         <div class="clock">00:00</div>
@@ -78,6 +86,7 @@ app.innerHTML = `
       <div class="menu">
         <button class="btn primary big start-btn">게임 시작</button>
         <button class="btn shop-btn"><img src="${iconUrl('gold')}" alt="" />강화 상점 <b class="title-gold"></b></button>
+        <button class="btn book-btn"><img src="${iconUrl('synergy')}" alt="" />조합 도감</button>
         <div class="toggles">
           <button class="chip sfx-toggle"></button>
           <button class="chip music-toggle"></button>
@@ -103,6 +112,15 @@ app.innerHTML = `
       <h2>강화 상점</h2>
       <p class="wallet"><img src="${iconUrl('gold')}" alt="" /><b class="shop-gold">0</b></p>
       <div class="shop-grid"></div>
+      <button class="btn ghost back-btn">돌아가기</button>
+    </div>
+  </section>
+
+  <section class="screen book-screen" hidden>
+    <div class="panel wide">
+      <p class="eyebrow">RECIPES</p>
+      <h2>조합 도감</h2>
+      <div class="book"></div>
       <button class="btn ghost back-btn">돌아가기</button>
     </div>
   </section>
@@ -138,6 +156,7 @@ app.innerHTML = `
           <div class="slots big pause-weapons"></div>
           <h3>패시브</h3>
           <div class="slots big pause-passives"></div>
+          <div class="pause-combos"></div>
         </div>
         <div>
           <h3>능력치</h3>
@@ -179,6 +198,7 @@ const screens = {
   title: $('.title-screen'),
   select: $('.select-screen'),
   shop: $('.shop-screen'),
+  book: $('.book-screen'),
   levelup: $('.levelup-screen'),
   chest: $('.chest-screen'),
   pause: $('.pause-screen'),
@@ -232,6 +252,12 @@ $('.shop-btn').addEventListener('click', () => {
   sfx.click();
   renderShop();
   show('shop');
+});
+$('.book-btn').addEventListener('click', () => {
+  unlockAudio();
+  sfx.click();
+  renderBook();
+  show('book');
 });
 for (const b of $$('.back-btn')) {
   b.addEventListener('click', () => {
@@ -296,6 +322,45 @@ function renderShop() {
   }
 }
 
+// ---------- recipe book ----------
+const ico = (id: string) => `<img src="${iconUrl(id)}" alt="" />`;
+function recipe(a: string, aName: string, b: string, bName: string, out: string, outName: string, desc: string, color: string) {
+  return `
+    <div class="recipe" style="--c:${color}">
+      <div class="recipe-in">
+        <span class="recipe-item">${ico(a)}<small>${aName}</small></span>
+        <b>+</b>
+        <span class="recipe-item">${ico(b)}<small>${bName}</small></span>
+        <b>→</b>
+      </div>
+      <div class="recipe-out">${ico(out)}<span><strong>${outName}</strong><small>${desc}</small></span></div>
+    </div>`;
+}
+function renderBook() {
+  const evo = (Object.keys(WEAPONS) as WeaponId[])
+    .map((id) => {
+      const w = WEAPONS[id];
+      const pa = PASSIVES[w.evo.passive];
+      return recipe(id, `${w.name} LV8`, w.evo.passive, pa.name, id, `★ ${w.evo.name}`, w.evo.desc, '#ffd36b');
+    })
+    .join('');
+  const syn = SYNERGIES.map((sy) =>
+    recipe(sy.a, `${WEAPONS[sy.a].name} LV8`, sy.b, `${WEAPONS[sy.b].name} LV8`, 'synergy', sy.name, sy.desc, '#7cc8ff'),
+  ).join('');
+  const rel = (Object.keys(RELICS) as RelicId[])
+    .map((id) => {
+      const r = RELICS[id];
+      return recipe(r.a, `${PASSIVES[r.a].name} MAX`, r.b, `${PASSIVES[r.b].name} MAX`, `relic-${id}`, r.name, r.desc, r.color);
+    })
+    .join('');
+  $('.book').innerHTML = `
+    <h3>무기 진화 <em>보물 상자를 열면 진화</em></h3>${evo}
+    <h3>공명 <em>두 무기가 모두 최대 레벨이면 자동 발동</em></h3>${syn}
+    <h3>유물 합성 <em>레벨업·보물 상자에서 합성</em></h3>${rel}
+    <h3>초월 <em>더 강화할 것이 없을 때</em></h3>
+    <div class="recipe" style="--c:#ffd36b"><div class="recipe-out">${ico('limit')}<span><strong>무기 초월</strong><small>최대 레벨 무기 ${LIMIT_DESC}</small></span></div></div>`;
+}
+
 // ---------- run ----------
 function startRun(c: CharacterDef) {
   currentChar = c;
@@ -319,12 +384,20 @@ const goldCount = $('.gold-count');
 const bossBar = $('.boss-bar');
 const bossFill = $('.boss-bar i');
 
-function slotsHtml(items: { icon: string; color: string; name: string; lv: number; evo?: boolean }[], total: number) {
+interface SlotItem {
+  icon: string;
+  color: string;
+  name: string;
+  label: string;
+  evo?: boolean;
+}
+
+function slotsHtml(items: SlotItem[], total: number) {
   let html = '';
   for (let i = 0; i < total; i++) {
     const it = items[i];
     html += it
-      ? `<div class="slot ${it.evo ? 'evo' : ''}" style="--c:${it.color}" title="${it.name}"><img src="${iconUrl(it.icon)}" alt="" /><i>${it.evo ? '★' : it.lv}</i></div>`
+      ? `<div class="slot ${it.evo ? 'evo' : ''}" style="--c:${it.color}" title="${it.name}"><img src="${iconUrl(it.icon)}" alt="" />${it.label ? `<i>${it.label}</i>` : ''}</div>`
       : `<div class="slot empty"></div>`;
   }
   return html;
@@ -341,23 +414,35 @@ game.onHud = (h) => {
   goldCount.textContent = h.gold.toLocaleString();
   bossBar.hidden = h.boss < 0;
   if (h.boss >= 0) bossFill.style.width = `${h.boss * 100}%`;
-  const key = JSON.stringify([h.weapons, h.passives]);
+  const key = JSON.stringify([h.weapons, h.passives, h.relics]);
   if (key !== lastHudKey) {
     lastHudKey = key;
     $('.slots.weapons').innerHTML = weaponSlots(h);
     $('.slots.passives').innerHTML = passiveSlots(h);
+    $('.slots.relics').innerHTML = relicSlots(h);
   }
 };
 
 const weaponSlots = (h: HudState) =>
   slotsHtml(
-    h.weapons.map(([id, lv, evo]) => ({ icon: id, color: evo ? '#ffd36b' : WEAPONS[id].color, name: evo ? WEAPONS[id].evo.name : WEAPONS[id].name, lv, evo })),
+    h.weapons.map(([id, lv, evo, limit]) => ({
+      icon: id,
+      color: evo ? '#ffd36b' : WEAPONS[id].color,
+      name: evo ? WEAPONS[id].evo.name : WEAPONS[id].name,
+      label: limit ? `★${limit}` : evo ? '★' : String(lv),
+      evo: evo || limit > 0,
+    })),
     6,
   );
 const passiveSlots = (h: HudState) =>
   slotsHtml(
-    h.passives.map(([id, lv]) => ({ icon: id, color: PASSIVES[id].color, name: PASSIVES[id].name, lv })),
+    h.passives.map(([id, lv]) => ({ icon: id, color: PASSIVES[id].color, name: PASSIVES[id].name, label: lv >= PASSIVES[id].maxLevel ? 'M' : String(lv) })),
     6,
+  );
+const relicSlots = (h: HudState) =>
+  slotsHtml(
+    h.relics.map((id) => ({ icon: `relic-${id}`, color: RELICS[id].color, name: RELICS[id].name, label: '', evo: true })),
+    h.relics.length,
   );
 
 // ---------- level up ----------
@@ -377,7 +462,7 @@ game.onLevelUp = (choices) => {
     btn.innerHTML = `
       <span class="choice-icon"><img src="${iconUrl(d.icon)}" alt="" /></span>
       <span class="choice-body">
-        <span class="choice-head"><strong>${d.name}</strong><em class="${d.tag === 'NEW' ? 'new' : ''}">${d.tag}</em></span>
+        <span class="choice-head"><strong>${d.name}</strong><em class="${d.tag === 'NEW' ? 'new' : c.kind === 'fuse' || c.kind === 'limit' ? 'special' : ''}">${d.tag}</em></span>
         <span class="choice-desc">${d.desc}</span>
         ${d.hint ? `<span class="choice-hint">${d.hint}</span>` : ''}
         ${pips}
@@ -442,6 +527,15 @@ function togglePause(force?: boolean) {
   if (next && lastHud) {
     $('.pause-weapons').innerHTML = weaponSlots(lastHud);
     $('.pause-passives').innerHTML = passiveSlots(lastHud);
+    const relics = lastHud.relics.map((id) => `<li style="--c:${RELICS[id].color}">${ico(`relic-${id}`)}<span><strong>${RELICS[id].name}</strong><small>${RELICS[id].desc}</small></span></li>`);
+    const syns = SYNERGIES.filter((sy) => lastHud!.synergies.includes(sy.id)).map(
+      (sy) => `<li style="--c:#7cc8ff">${ico('synergy')}<span><strong>공명 · ${sy.name}</strong><small>${sy.desc}</small></span></li>`,
+    );
+    const limits = lastHud.weapons
+      .filter(([, , , l]) => l > 0)
+      .map(([id, , , l]) => `<li style="--c:#ffd36b">${ico('limit')}<span><strong>${WEAPONS[id].name} 초월 ★${l}/${LIMIT_MAX}</strong><small>피해량 +${Math.round(l * LIMIT_BONUS * 100)}%</small></span></li>`);
+    const all = [...syns, ...relics, ...limits];
+    $('.pause-combos').innerHTML = all.length ? `<h3>조합 효과</h3><ul class="combo-list">${all.join('')}</ul>` : '';
     $('.stat-list').innerHTML = game.stats.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
   }
 }
