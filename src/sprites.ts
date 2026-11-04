@@ -82,6 +82,8 @@ const SKELETON: Palette = { W: '#e8e2d0', w: '#a8a090', k: '#141018', R: '#ff504
 const GHOST: Palette = { C: '#cdeef8', c: '#86c4dc', k: '#20304a' };
 const GOLEM: Palette = { S: '#8a7a6a', s: '#5e5248', L: '#b0a090', O: '#ffb030', m: '#5a7a3a' };
 const REAPER: Palette = { k: '#1a0c16', K: '#3a2036', R: '#ff2a3d' };
+const SLIME: Palette = { G: '#5adf8a', g: '#2a9a5a', W: '#d8ffe8', k: '#0c2a18' };
+const KNIGHT: Palette = { S: '#5a6478', s: '#3a4254', L: '#8a94a8', R: '#ff3a4a', P: '#5a2a7a', k: '#141018' };
 const WITCH: Palette = { P: '#4a2a7a', p: '#2e1850', g: '#7cc068', Y: '#ffe040', H: '#6a4a2a', O: '#ff5ad0' };
 
 let cache: ReturnType<typeof buildAll> | null = null;
@@ -308,6 +310,75 @@ function buildAll() {
       3,
     ),
 
+    slime: sprite(
+      [
+        [
+          '....GGGG....',
+          '..GGWWGGGG..',
+          '.GGWWGGGGGg.',
+          '.GGGkGGkGGg.',
+          'GGGGkGGkGGGg',
+          'GGGGGGGGGGGg',
+          'gGGGGGGGGGgg',
+          '.gggggggggg.',
+        ],
+        [
+          '............',
+          '....GGGG....',
+          '.GGGWWGGGGg.',
+          'GGGWWGGGGGGg',
+          'GGGGkGGkGGGg',
+          'GGGGkGGkGGGg',
+          'gGGGGGGGGGgg',
+          'gggggggggggg',
+        ],
+      ],
+      SLIME,
+      3,
+    ),
+    slimeling: sprite(
+      [
+        ['..GGG..', '.GWGGg.', 'GGkGkGg', 'GGGGGGg', '.ggggg.'],
+        ['.......', '..GGG..', 'GWGGGGg', 'GGkGkGg', 'ggggggg'],
+      ],
+      SLIME,
+      3,
+    ),
+    knight: sprite(
+      [
+        [
+          '....SSSS....',
+          '...SLLLSs...',
+          '...SkRkRs...',
+          '...SSSSSs...',
+          '.PPsSSSSsPP.',
+          'PPSLLSSSSsPP',
+          'P.SLSSSSSs.P',
+          'L.SSSSSSSs.L',
+          'L..sSSSSs..L',
+          'L..SSs.SSs.L',
+          '...SS..SS...',
+          '..sss..sss..',
+        ],
+        [
+          '....SSSS....',
+          '...SLLLSs...',
+          '...SkRkRs...',
+          '...SSSSSs...',
+          '.PPsSSSSsPP.',
+          'PPSLLSSSSsPP',
+          'P.SLSSSSSs.P',
+          'L.SSSSSSSs.L',
+          'L..sSSSSs..L',
+          'L..SSs.SS..L',
+          '..SS....SS..',
+          '.sss....sss.',
+        ],
+      ],
+      KNIGHT,
+      3,
+    ),
+
     // ---------- pickups / props ----------
     gemBlue: gem('#bfe6ff', '#4aa8ff', '#2860c0'),
     gemGreen: gem('#d8ffd0', '#4adf6a', '#1f8a3a'),
@@ -483,11 +554,38 @@ const ICONS: Record<string, { rows: string[]; pal: Palette }> = {
     rows: ['.PP..CC.', 'P..PC..C', 'P..CP..C', 'P..CP..C', 'P..PC..C', '.PP..CC.'],
     pal: { P: '#ff8a7a', C: '#7cc8ff' },
   },
+  frost: {
+    rows: ['....W....', '.W..W..W.', '..W.W.W..', '...CWC...', 'WWWWCWWWW', '...CWC...', '..W.W.W..', '.W..W..W.', '....W....'],
+    pal: { W: '#c8f4ff', C: '#4ac8f0' },
+  },
+  beam: {
+    rows: ['...YYY...', '..YWWWY..', '.YWWWWWY.', '.YWWYWWY.', '.YWWWWWY.', '..YWWWY..', '...YYY...', '...k.k...', '..kkkkk..'],
+    pal: { Y: '#ffd36b', W: '#fff8d0', k: '#8a6a3a' },
+  },
+  spirit: {
+    rows: ['....G....', '...GG....', '..GGLG...', '..GLLGG..', '.GLWWLG..', '.GLWWLGG.', '.GLLLLG..', '..GGGG...', '...GG....'],
+    pal: { G: '#5adf5a', L: '#b8ff9a', W: '#f0fff0' },
+  },
+  bomb: {
+    rows: ['......Y..', '.....Yk..', '....k....', '..kkkk...', '.kKKKKk..', 'kKWKKKKk.', 'kKKKKKKk.', 'kKKKKKKk.', '.kKKKKk..', '..kkkk...'],
+    pal: { Y: '#ffd040', k: '#141018', K: '#4a4a5a', W: '#9a9ab0' },
+  },
+  duration: {
+    rows: ['kkkkkkkk', '.kYYYYk.', '..kYYk..', '...kk...', '...kk...', '..k..k..', '.k.YY.k.', 'kkkkkkkk'],
+    pal: { k: '#c8a050', Y: '#ffe9a0' },
+  },
+  wisdom: {
+    rows: ['BBBBBBBB.', 'BWWWWWWBk', 'BWBBBBWBk', 'BWWWWWWBk', 'BWBBBWWBk', 'BWWWWWWBk', 'BBBBBBBBk', '.kkkkkkkk'],
+    pal: { B: '#2a5aa8', W: '#d8e8ff', k: '#142a5a' },
+  },
   'relic-berserk': relic('#ffb0b8', '#ff3a50', '#8a1020'),
   'relic-hourglass': relic('#d0f8ff', '#3ac8f0', '#16608a'),
   'relic-phoenix': relic('#ffe0b0', '#ff8a2a', '#9a3a10'),
   'relic-gale': relic('#ffffff', '#b8c2d4', '#5a6478'),
   'relic-compass': relic('#e8d8ff', '#9a6aff', '#4a2a9a'),
+  'relic-eclipse': relic('#fff0c0', '#e8b040', '#8a5a10'),
+  'relic-sage': relic('#d8eaff', '#4a8aff', '#1a3a8a'),
+  'relic-gambler': relic('#d8ffd0', '#4adf4a', '#1a7a2a'),
 };
 
 function relic(hi: string, base: string, dark: string) {
