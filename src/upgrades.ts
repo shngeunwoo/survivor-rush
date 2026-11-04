@@ -1,8 +1,8 @@
 import type { HeroPalette } from './sprites';
 
-export type WeaponId = 'wand' | 'aura' | 'orbit' | 'lightning' | 'whip' | 'fire' | 'axe' | 'cross';
-export type PassiveId = 'might' | 'haste' | 'speed' | 'vitality' | 'armor' | 'magnet' | 'regen' | 'area' | 'luck' | 'amount';
-export type RelicId = 'berserk' | 'hourglass' | 'phoenix' | 'gale' | 'compass';
+export type WeaponId = 'wand' | 'aura' | 'orbit' | 'lightning' | 'whip' | 'fire' | 'axe' | 'cross' | 'frost' | 'beam' | 'spirit' | 'bomb';
+export type PassiveId = 'might' | 'haste' | 'speed' | 'vitality' | 'armor' | 'magnet' | 'regen' | 'area' | 'luck' | 'amount' | 'duration' | 'wisdom';
+export type RelicId = 'berserk' | 'hourglass' | 'phoenix' | 'gale' | 'compass' | 'eclipse' | 'sage' | 'gambler';
 
 export interface WeaponDef {
   name: string;
@@ -151,6 +151,70 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     ],
     evo: { passive: 'amount', name: '천상의 십자가', desc: '거대한 십자가들이 사방으로 날아갔다 되돌아옵니다.' },
   },
+  frost: {
+    name: '서리 결정',
+    color: '#9ae8ff',
+    maxLevel: 8,
+    levels: [
+      '사방으로 얼음 조각을 흩뿌려 맞은 적을 느리게 만듭니다.',
+      '얼음 조각 +2',
+      '피해량 +6',
+      '둔화 시간 증가',
+      '얼음 조각 +2',
+      '피해량 +6, 관통 +1',
+      '재사용 대기시간 감소',
+      '얼음 조각 +2, 피해량 +6',
+    ],
+    evo: { passive: 'speed', name: '절대 영도', desc: '얼음 폭풍이 몰아쳐 맞은 적을 그 자리에 얼려버립니다.' },
+  },
+  beam: {
+    name: '성광의 구슬',
+    color: '#fff0a0',
+    maxLevel: 8,
+    levels: [
+      '가장 가까운 적을 향해 모든 것을 꿰뚫는 광선을 쏩니다.',
+      '피해량 +8',
+      '광선 길이 증가',
+      '광선 +1',
+      '피해량 +8',
+      '광선 굵기 증가',
+      '광선 +1',
+      '피해량 +8, 재사용 대기시간 감소',
+    ],
+    evo: { passive: 'duration', name: '심판의 빛', desc: '네 갈래의 거대한 광선이 회전하며 전장을 쓸어버립니다.' },
+  },
+  spirit: {
+    name: '원혼 등불',
+    color: '#b8ff9a',
+    maxLevel: 8,
+    levels: [
+      '적을 쫓아가는 도깨비불을 날려 보냅니다.',
+      '도깨비불 +1',
+      '피해량 +5',
+      '도깨비불 +1',
+      '관통 +1',
+      '도깨비불 +1',
+      '피해량 +5, 속도 증가',
+      '도깨비불 +2',
+    ],
+    evo: { passive: 'magnet', name: '영혼의 행렬', desc: '끝없는 도깨비불 행렬이 적을 쫓고, 적중할 때마다 체력을 흡수합니다.' },
+  },
+  bomb: {
+    name: '화약 주머니',
+    color: '#ff7a5a',
+    maxLevel: 8,
+    levels: [
+      '적 무리에 폭탄을 던져 넓은 범위를 폭파합니다.',
+      '피해량 +12',
+      '폭발 범위 증가',
+      '폭탄 +1',
+      '피해량 +12',
+      '재사용 대기시간 감소',
+      '폭탄 +1',
+      '피해량 +12, 폭발 범위 증가',
+    ],
+    evo: { passive: 'wisdom', name: '연쇄 폭뢰', desc: '폭발이 사방으로 작은 폭발을 연쇄적으로 일으킵니다.' },
+  },
 };
 
 export const PASSIVES: Record<PassiveId, PassiveDef> = {
@@ -164,6 +228,8 @@ export const PASSIVES: Record<PassiveId, PassiveDef> = {
   area: { name: '확장의 서', color: '#b89aff', maxLevel: 5, desc: '공격 범위 +10%' },
   luck: { name: '행운의 클로버', color: '#7dff7a', maxLevel: 5, desc: '치명타 확률 +4%' },
   amount: { name: '복제의 거울', color: '#d0b0ff', maxLevel: 2, desc: '모든 발사체 수 +1' },
+  duration: { name: '영원의 모래', color: '#e8c87a', maxLevel: 5, desc: '효과 지속시간 +12%' },
+  wisdom: { name: '지혜의 서', color: '#7ab8ff', maxLevel: 5, desc: '경험치 획득 +8%' },
 };
 
 export interface SynergyDef {
@@ -180,6 +246,10 @@ export const SYNERGIES: SynergyDef[] = [
   { id: 'purgatory', a: 'aura', b: 'fire', name: '연옥', desc: '결계 피해량 +50%, 결계 범위 +20%' },
   { id: 'bladestorm', a: 'orbit', b: 'whip', name: '칼날 폭풍', desc: '단검 +4, 채찍 피해량 +30%' },
   { id: 'crusade', a: 'axe', b: 'cross', name: '성전', desc: '도끼·십자가 피해량 +40%, 크기 +25%' },
+  { id: 'superconduct', a: 'frost', b: 'lightning', name: '초전도', desc: '번개가 적을 얼리고, 둔화된 적에게 피해 +50%' },
+  { id: 'prism', a: 'beam', b: 'wand', name: '프리즘', desc: '광선 +2, 마법탄 +2' },
+  { id: 'wraith', a: 'spirit', b: 'orbit', name: '망령 호위', desc: '도깨비불 +3, 단검 피해량 +30%' },
+  { id: 'napalm', a: 'bomb', b: 'fire', name: '소이탄', desc: '폭발한 자리에 화염 장판이 남습니다.' },
 ];
 
 export interface RelicDef {
@@ -197,6 +267,9 @@ export const RELICS: Record<RelicId, RelicDef> = {
   phoenix: { a: 'vitality', b: 'regen', name: '불사조의 심장', desc: '초당 체력 회복 +2, 부활 +1회', color: '#ff9a4a' },
   gale: { a: 'armor', b: 'speed', name: '질풍의 갑옷', desc: '방어 +2, 이동 속도 +15%', color: '#b8c2d4' },
   compass: { a: 'magnet', b: 'area', name: '별의 나침반', desc: '공격 범위 +20%, 획득 범위 2배', color: '#b89aff' },
+  eclipse: { a: 'duration', b: 'area', name: '일식의 왕관', desc: '지속시간 +30%, 공격 범위 +10%', color: '#e8c87a' },
+  sage: { a: 'wisdom', b: 'magnet', name: '현자의 돌', desc: '경험치 획득 +25%, 골드 획득 +25%', color: '#7ab8ff' },
+  gambler: { a: 'luck', b: 'speed', name: '도박사의 주사위', desc: '치명타 확률 +8%, 이동 속도 +10%', color: '#7dff7a' },
 };
 
 export function fusableRelics(passives: Map<PassiveId, number>, relics: Set<RelicId>): RelicId[] {
@@ -273,6 +346,45 @@ export const CHARACTERS: CharacterDef[] = [
     palette: { H: '#c84a2a', h: '#e87a4a', R: '#5a3a2a', r: '#3a2418', B: '#8a2a2a', b: '#5a1a1a' },
     maxHp: 10,
     might: 1.15,
+    cd: 1,
+    speed: 0.95,
+    armor: 0,
+  },
+  {
+    id: 'frostmage',
+    name: '세린',
+    title: '서리 마녀',
+    desc: '적의 발을 묶는 통제형. 재사용 대기시간 -5%, 최대 체력 -5',
+    weapon: 'frost',
+    palette: { H: '#d8f4ff', h: '#ffffff', R: '#2a6a9a', r: '#184a70', B: '#4aa0d8', b: '#2a70a8' },
+    maxHp: -5,
+    might: 1,
+    cd: 0.95,
+    speed: 1,
+    armor: 0,
+  },
+  {
+    id: 'lampkeeper',
+    name: '노아',
+    title: '등불지기',
+    desc: '원혼을 부리는 추적형. 피해량 +5%, 이동 속도 +5%',
+    weapon: 'spirit',
+    palette: { H: '#3a3a4a', h: '#5a5a70', R: '#6a8a3a', r: '#4a6a28', B: '#3a4a3a', b: '#283428' },
+    maxHp: 0,
+    might: 1.05,
+    cd: 1,
+    speed: 1.05,
+    armor: 0,
+  },
+  {
+    id: 'bomber',
+    name: '고든',
+    title: '광산 폭파공',
+    desc: '광역을 날려버리는 폭발형. 최대 체력 +20, 이동 속도 -5%',
+    weapon: 'bomb',
+    palette: { H: '#e8b030', h: '#ffd860', R: '#6a4a2a', r: '#4a321a', B: '#8a6a3a', b: '#5a4424' },
+    maxHp: 20,
+    might: 1,
     cd: 1,
     speed: 0.95,
     armor: 0,
