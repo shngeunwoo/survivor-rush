@@ -74,7 +74,7 @@ app.innerHTML = `
     <div class="title-wrap">
       <p class="eyebrow">NIGHT SURVIVOR</p>
       <h1><span>밤의</span> 생존자</h1>
-      <p class="lead">끝없이 몰려오는 어둠의 무리 속에서 새벽까지 버테라.<br />공격은 자동, 당신은 살아남기만 하면 된다.</p>
+      <p class="lead">끝없이 몰려오는 어둠의 무리 속에서 새벽까지 버텨라.<br />공격은 자동, 당신은 살아남기만 하면 된다.</p>
       <div class="menu">
         <button class="btn primary big start-btn">게임 시작</button>
         <button class="btn shop-btn"><img src="${iconUrl('gold')}" alt="" />강화 상점 <b class="title-gold"></b></button>
