@@ -8,6 +8,7 @@ import {
   WEAPONS,
   fusableRelics,
   rollChoices,
+  synergyReady,
   xpForLevel,
   type CharacterDef,
   type Choice,
@@ -348,6 +349,7 @@ export class Game {
   private bossIdx = 0;
   private orbitAngle = 0;
   private auraTick = 0;
+  private heavenTimer = 3;
   private healBudget = 0;
   private flash = 0;
   private banner: { text: string; sub: string; life: number; color: string } | null = null;
@@ -420,6 +422,7 @@ export class Game {
     this.relics = new Set();
     this.limits = new Map();
     this.synergies = new Set();
+    this.heavenTimer = 3;
     this.time = 0;
     this.kills = 0;
     this.gold = 0;
@@ -488,9 +491,10 @@ export class Game {
   private checkSynergies() {
     for (const syn of SYNERGIES) {
       if (this.synergies.has(syn.id)) continue;
-      if (this.weapons.get(syn.a) === WEAPONS[syn.a].maxLevel && this.weapons.get(syn.b) === WEAPONS[syn.b].maxLevel) {
+      if (synergyReady(syn, this.weapons)) {
         this.synergies.add(syn.id);
-        this.banner = { text: `공명 · ${syn.name}`, sub: syn.desc, life: 2.8, color: '#7cc8ff' };
+        const triple = syn.parts.length === 3;
+        this.banner = { text: `${triple ? '삼중 공명' : '공명'} · ${syn.name}`, sub: syn.lore, life: triple ? 3.4 : 2.8, color: triple ? '#ffd36b' : '#7cc8ff' };
         this.flash = 0.4;
         sfx.evolve();
       }
@@ -588,7 +592,9 @@ export class Game {
     if (id === 'aura' && this.synergies.has('purgatory')) m *= 1.5;
     if (id === 'whip' && this.synergies.has('bladestorm')) m *= 1.3;
     if ((id === 'axe' || id === 'cross') && this.synergies.has('crusade')) m *= 1.4;
-    if (id === 'orbit' && this.synergies.has('wraith')) m *= 1.3;
+    if (id === 'spirit' && this.synergies.has('ghostfire')) m *= 1.4;
+    if ((id === 'fire' || id === 'frost' || id === 'lightning') && this.synergies.has('elements')) m *= 1.4;
+    if ((id === 'orbit' || id === 'axe' || id === 'whip') && this.synergies.has('armory')) m *= 1.35;
     return m;
   }
 
@@ -1024,7 +1030,10 @@ export class Game {
     if (e.dead) return;
     const crit = Math.random() < this.critChance;
     const chilled = this.synergies.has('superconduct') && e.slow > this.time ? 1.5 : 1;
-    const amount = dmg * this.might * (src ? this.weaponMult(src) : 1) * chilled * (0.9 + Math.random() * 0.2) * (crit ? this.critMult : 1);
+    const aura = this.weapons.get('aura');
+    const blessed =
+      aura && this.synergies.has('sanctuary') && Math.hypot(e.x - this.player.x, e.y - this.player.y) < this.auraRadius(aura, this.evolved.has('aura')) + e.r ? 1.25 : 1;
+    const amount = dmg * this.might * (src ? this.weaponMult(src) : 1) * chilled * blessed * (0.9 + Math.random() * 0.2) * (crit ? this.critMult : 1);
     e.hp -= amount;
     e.flash = 0.09;
     if (src) this.damageBy.set(src, (this.damageBy.get(src) ?? 0) + Math.min(amount, e.hp + amount));
@@ -1153,7 +1162,8 @@ export class Game {
   private tickTimer(id: WeaponId, dt: number, cd: number): boolean {
     const t = (this.weaponTimers.get(id) ?? 0) - dt;
     if (t <= 0) {
-      this.weaponTimers.set(id, cd * this.cdMult);
+      const steel = this.synergies.has('armory') && (id === 'axe' || id === 'whip') ? 0.8 : 1;
+      this.weaponTimers.set(id, cd * this.cdMult * steel);
       return true;
     }
     this.weaponTimers.set(id, t);
@@ -1180,7 +1190,7 @@ export class Game {
   }
 
   private auraRadius(lv: number, evo: boolean) {
-    return (60 + 10 * lv + (evo ? 50 : 0)) * this.areaMult * (this.synergies.has('purgatory') ? 1.2 : 1);
+    return (60 + 10 * lv + (evo ? 50 : 0)) * this.areaMult * (this.synergies.has('sanctuary') ? 1.2 : 1);
   }
 
   private updateWeapons(dt: number) {
@@ -1238,7 +1248,7 @@ export class Game {
     const orbit = this.weapons.get('orbit');
     if (orbit) {
       const o = this.orbitParams(orbit, this.evolved.has('orbit'));
-      this.orbitAngle += o.speed * dt;
+      this.orbitAngle += o.speed * (this.synergies.has('armory') ? 1.5 : 1) * dt;
       for (let i = 0; i < o.count; i++) {
         const a = this.orbitAngle + (i / o.count) * Math.PI * 2;
         const bx = p.x + Math.cos(a) * o.radius;
@@ -1267,6 +1277,11 @@ export class Game {
           const t = visible.splice(Math.floor(Math.random() * visible.length), 1)[0];
           this.strike(t.x, t.y, r, dmg, 'lightning');
           if (this.synergies.has('superconduct')) this.query(t.x, t.y, r, (e) => this.chill(e, 2, 0.5));
+          if (this.synergies.has('elements')) {
+            this.query(t.x, t.y, r * 1.3, (e) => this.chill(e, 1.5, 0));
+            const dur = 1.6 * this.durMult;
+            if (this.zones.length < 60) this.zones.push({ x: t.x, y: t.y, r: r * 0.9, dps: 18, life: dur, maxLife: dur, tick: 0, evo: false });
+          }
           struck++;
         }
         if (struck) {
@@ -1420,8 +1435,7 @@ export class Game {
       if (this.tickTimer('spirit', dt, evo ? 0.9 : 1.5)) {
         const n =
           (evo ? 8 : 1 + (spirit >= 2 ? 1 : 0) + (spirit >= 4 ? 1 : 0) + (spirit >= 6 ? 1 : 0) + (spirit >= 8 ? 2 : 0)) +
-          this.amount +
-          (this.synergies.has('wraith') ? 3 : 0);
+          this.amount;
         const dmg = (12 + (spirit >= 3 ? 5 : 0) + (spirit >= 7 ? 5 : 0)) * (evo ? 1.4 : 1);
         const pierce = evo ? 2 : 1 + (spirit >= 5 ? 1 : 0);
         const sp = spirit >= 7 || evo ? 320 : 260;
@@ -1448,6 +1462,25 @@ export class Game {
           this.bombs.push({ sx: p.x, sy: p.y - 10, tx, ty, t: 0, dur: 0.55, r, dmg, evo, mini: false });
         }
         sfx.whip();
+      }
+    }
+
+    if (this.synergies.has('heaven')) {
+      this.heavenTimer -= dt;
+      if (this.heavenTimer <= 0) {
+        this.heavenTimer = 6;
+        const r = 360 * area;
+        this.query(p.x, p.y, r, (e) => this.hitEnemy(e, 140, p.x, p.y, 260, null));
+        this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20);
+        this.fx.push({ kind: 'nova', x: p.x, y: p.y, life: 0.7, max: 0.7, dir: 0, len: 0, r, color: '#fff2b0', seed: 0 });
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + this.clock;
+          this.fx.push({ kind: 'bolt', x: p.x + Math.cos(a) * r * 0.55, y: p.y + Math.sin(a) * r * 0.55, life: 0.4, max: 0.4, dir: 0, len: 0, r: 40, color: '#fff2b0', seed: Math.random() * 1000 });
+        }
+        this.texts.push({ x: p.x, y: p.y - 40, vy: -50, text: '+20', life: 0.9, max: 0.9, color: '#7dff9a', size: 15 });
+        this.flash = Math.max(this.flash, 0.25);
+        this.shake = Math.max(this.shake, 6);
+        sfx.zap();
       }
     }
   }
@@ -1619,6 +1652,10 @@ export class Game {
         if (pr.kind === 'wisp') {
           pr.target = null;
           if (pr.evo) this.lifesteal(0.3);
+          if (this.synergies.has('ghostfire') && this.zones.length < 60) {
+            const dur = 1.4 * this.durMult;
+            this.zones.push({ x: e.x, y: e.y, r: 26 * this.areaMult, dps: 14, life: dur, maxLife: dur, tick: 0, evo: false });
+          }
         }
         if (storm && pr.src === 'wand' && Math.random() < 0.25) this.strike(e.x, e.y, 40 * this.areaMult, 30, 'wand');
       });
@@ -2135,7 +2172,8 @@ export class Game {
     const ctx = this.ctx;
     for (const pr of this.projectiles) {
       if (pr.kind === 'orb' || pr.kind === 'wisp') {
-        ctx.fillStyle = pr.kind === 'wisp' ? (pr.evo ? '#f4ffd0' : '#d8ffc8') : pr.evo ? '#fff6d0' : '#e8f6ff';
+        const ghost = pr.kind === 'wisp' && this.synergies.has('ghostfire');
+        ctx.fillStyle = pr.kind === 'wisp' ? (ghost ? '#ffe2b0' : pr.evo ? '#f4ffd0' : '#d8ffc8') : pr.evo ? '#fff6d0' : '#e8f6ff';
         ctx.beginPath();
         ctx.arc(pr.x, pr.y, pr.r * 0.7, 0, Math.PI * 2);
         ctx.fill();
@@ -2229,7 +2267,9 @@ export class Game {
           : pr.kind === 'ice'
             ? 'rgba(120,220,255,0.45)'
             : pr.kind === 'wisp'
-              ? 'rgba(130,255,110,0.85)'
+              ? this.synergies.has('ghostfire')
+                ? 'rgba(255,150,70,0.85)'
+                : 'rgba(130,255,110,0.85)'
               : pr.evo
                 ? 'rgba(255,220,120,0.9)'
                 : 'rgba(110,190,255,0.9)',
@@ -2493,7 +2533,7 @@ export class Game {
     ctx.beginPath();
     ctx.arc(ox, oy, 50, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
     ctx.beginPath();
     ctx.arc(ox + dx * k, oy + dy * k, 20, 0, Math.PI * 2);
     ctx.fill();

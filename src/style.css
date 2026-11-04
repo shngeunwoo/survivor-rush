@@ -739,6 +739,17 @@ h1 span {
   gap: 2px;
 }
 
+.recipe-out i {
+  font-style: normal;
+  font-size: 10px;
+  color: color-mix(in srgb, var(--c) 55%, var(--muted));
+}
+
+.recipe.triple {
+  border-color: color-mix(in srgb, var(--c) 60%, var(--edge));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--c) 25%, transparent);
+}
+
 .recipe-out strong,
 .combo-list strong {
   font-weight: normal;

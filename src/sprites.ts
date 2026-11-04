@@ -554,6 +554,10 @@ const ICONS: Record<string, { rows: string[]; pal: Palette }> = {
     rows: ['.PP..CC.', 'P..PC..C', 'P..CP..C', 'P..CP..C', 'P..PC..C', '.PP..CC.'],
     pal: { P: '#ff8a7a', C: '#7cc8ff' },
   },
+  synergy3: {
+    rows: ['...YYYY...', '..Y....Y..', '..Y....Y..', '.PPP..CCC.', 'P..YYYY..C', 'P..P..C..C', 'P..P..C..C', '.PP....CC.'],
+    pal: { P: '#ff8a7a', C: '#7cc8ff', Y: '#ffd36b' },
+  },
   frost: {
     rows: ['....W....', '.W..W..W.', '..W.W.W..', '...CWC...', 'WWWWCWWWW', '...CWC...', '..W.W.W..', '.W..W..W.', '....W....'],
     pal: { W: '#c8f4ff', C: '#4ac8f0' },

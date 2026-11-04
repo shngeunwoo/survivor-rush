@@ -324,17 +324,27 @@ function renderShop() {
 
 // ---------- recipe book ----------
 const ico = (id: string) => `<img src="${iconUrl(id)}" alt="" />`;
-function recipe(a: string, aName: string, b: string, bName: string, out: string, outName: string, desc: string, color: string) {
+function recipeN(inputs: [string, string][], out: string, outName: string, desc: string, color: string, lore = '') {
+  const items = inputs.map(([id, name]) => `<span class="recipe-item">${ico(id)}<small>${name}</small></span>`).join('<b>+</b>');
   return `
-    <div class="recipe" style="--c:${color}">
-      <div class="recipe-in">
-        <span class="recipe-item">${ico(a)}<small>${aName}</small></span>
-        <b>+</b>
-        <span class="recipe-item">${ico(b)}<small>${bName}</small></span>
-        <b>→</b>
-      </div>
-      <div class="recipe-out">${ico(out)}<span><strong>${outName}</strong><small>${desc}</small></span></div>
+    <div class="recipe${inputs.length > 2 ? ' triple' : ''}" style="--c:${color}">
+      <div class="recipe-in">${items}<b>→</b></div>
+      <div class="recipe-out">${ico(out)}<span><strong>${outName}</strong>${lore ? `<i>${lore}</i>` : ''}<small>${desc}</small></span></div>
     </div>`;
+}
+function recipe(a: string, aName: string, b: string, bName: string, out: string, outName: string, desc: string, color: string) {
+  return recipeN([[a, aName], [b, bName]], out, outName, desc, color);
+}
+function synergyRecipe(sy: (typeof SYNERGIES)[number]) {
+  const triple = sy.parts.length === 3;
+  return recipeN(
+    sy.parts.map((w) => [w, `${WEAPONS[w].name} LV8`]),
+    triple ? 'synergy3' : 'synergy',
+    sy.name,
+    sy.desc,
+    triple ? '#ffd36b' : '#7cc8ff',
+    sy.lore,
+  );
 }
 function renderBook() {
   const evo = (Object.keys(WEAPONS) as WeaponId[])
@@ -344,9 +354,8 @@ function renderBook() {
       return recipe(id, `${w.name} LV8`, w.evo.passive, pa.name, id, `★ ${w.evo.name}`, w.evo.desc, '#ffd36b');
     })
     .join('');
-  const syn = SYNERGIES.map((sy) =>
-    recipe(sy.a, `${WEAPONS[sy.a].name} LV8`, sy.b, `${WEAPONS[sy.b].name} LV8`, 'synergy', sy.name, sy.desc, '#7cc8ff'),
-  ).join('');
+  const syn = SYNERGIES.filter((sy) => sy.parts.length === 2).map(synergyRecipe).join('');
+  const syn3 = SYNERGIES.filter((sy) => sy.parts.length === 3).map(synergyRecipe).join('');
   const rel = (Object.keys(RELICS) as RelicId[])
     .map((id) => {
       const r = RELICS[id];
@@ -356,6 +365,7 @@ function renderBook() {
   $('.book').innerHTML = `
     <h3>무기 진화 <em>보물 상자를 열면 진화</em></h3>${evo}
     <h3>공명 <em>두 무기가 모두 최대 레벨이면 자동 발동</em></h3>${syn}
+    <h3>삼중 공명 <em>세 무기가 모두 최대 레벨이면 자동 발동 · 2개 공명과 중복 적용</em></h3>${syn3}
     <h3>유물 합성 <em>레벨업·보물 상자에서 합성</em></h3>${rel}
     <h3>초월 <em>더 강화할 것이 없을 때</em></h3>
     <div class="recipe" style="--c:#ffd36b"><div class="recipe-out">${ico('limit')}<span><strong>무기 초월</strong><small>최대 레벨 무기 ${LIMIT_DESC}</small></span></div></div>`;
@@ -529,7 +539,10 @@ function togglePause(force?: boolean) {
     $('.pause-passives').innerHTML = passiveSlots(lastHud);
     const relics = lastHud.relics.map((id) => `<li style="--c:${RELICS[id].color}">${ico(`relic-${id}`)}<span><strong>${RELICS[id].name}</strong><small>${RELICS[id].desc}</small></span></li>`);
     const syns = SYNERGIES.filter((sy) => lastHud!.synergies.includes(sy.id)).map(
-      (sy) => `<li style="--c:#7cc8ff">${ico('synergy')}<span><strong>공명 · ${sy.name}</strong><small>${sy.desc}</small></span></li>`,
+      (sy) =>
+        sy.parts.length === 3
+          ? `<li style="--c:#ffd36b">${ico('synergy3')}<span><strong>삼중 공명 · ${sy.name}</strong><small>${sy.desc}</small></span></li>`
+          : `<li style="--c:#7cc8ff">${ico('synergy')}<span><strong>공명 · ${sy.name}</strong><small>${sy.desc}</small></span></li>`,
     );
     const limits = lastHud.weapons
       .filter(([, , , l]) => l > 0)

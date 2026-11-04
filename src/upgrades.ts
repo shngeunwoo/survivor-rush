@@ -234,23 +234,31 @@ export const PASSIVES: Record<PassiveId, PassiveDef> = {
 
 export interface SynergyDef {
   id: string;
-  a: WeaponId;
-  b: WeaponId;
+  parts: WeaponId[];
   name: string;
+  lore: string;
   desc: string;
 }
 
-// 두 무기가 모두 최대 레벨이면 자동으로 발동
+// 재료 무기가 모두 최대 레벨이면 자동으로 발동
 export const SYNERGIES: SynergyDef[] = [
-  { id: 'storm', a: 'wand', b: 'lightning', name: '뇌전 마탄', desc: '마법탄이 적중한 적에게 낙뢰가 떨어집니다.' },
-  { id: 'purgatory', a: 'aura', b: 'fire', name: '연옥', desc: '결계 피해량 +50%, 결계 범위 +20%' },
-  { id: 'bladestorm', a: 'orbit', b: 'whip', name: '칼날 폭풍', desc: '단검 +4, 채찍 피해량 +30%' },
-  { id: 'crusade', a: 'axe', b: 'cross', name: '성전', desc: '도끼·십자가 피해량 +40%, 크기 +25%' },
-  { id: 'superconduct', a: 'frost', b: 'lightning', name: '초전도', desc: '번개가 적을 얼리고, 둔화된 적에게 피해 +50%' },
-  { id: 'prism', a: 'beam', b: 'wand', name: '프리즘', desc: '광선 +2, 마법탄 +2' },
-  { id: 'wraith', a: 'spirit', b: 'orbit', name: '망령 호위', desc: '도깨비불 +3, 단검 피해량 +30%' },
-  { id: 'napalm', a: 'bomb', b: 'fire', name: '소이탄', desc: '폭발한 자리에 화염 장판이 남습니다.' },
+  { id: 'sanctuary', parts: ['aura', 'cross'], name: '성역', lore: '성수로 축복한 십자가가 땅을 정화한다', desc: '결계 범위 +20%, 결계 안의 적이 받는 모든 피해 +25%' },
+  { id: 'purgatory', parts: ['aura', 'fire'], name: '연옥', lore: '성수에 불이 붙어 죄를 태운다', desc: '결계 피해량 +50%' },
+  { id: 'crusade', parts: ['axe', 'cross'], name: '성전', lore: '십자가를 새긴 도끼를 든 십자군', desc: '도끼·십자가 피해량 +40%, 크기 +25%' },
+  { id: 'storm', parts: ['wand', 'lightning'], name: '뇌전 마탄', lore: '지팡이에 번개를 깃들인다', desc: '마법탄이 적중한 적에게 낙뢰가 떨어집니다.' },
+  { id: 'superconduct', parts: ['frost', 'lightning'], name: '초전도', lore: '얼어붙은 몸은 전기를 더 잘 통한다', desc: '번개가 적을 얼리고, 둔화된 적에게 피해 +50%' },
+  { id: 'prism', parts: ['beam', 'wand'], name: '프리즘', lore: '마력으로 빛을 여러 갈래로 쪼갠다', desc: '광선 +2, 마법탄 +2' },
+  { id: 'napalm', parts: ['bomb', 'fire'], name: '소이탄', lore: '화약에 기름을 섞는다', desc: '폭발한 자리에 화염 장판이 남습니다.' },
+  { id: 'ghostfire', parts: ['spirit', 'fire'], name: '귀화', lore: '등불의 원혼에 불을 옮겨 붙인다', desc: '도깨비불 피해량 +40%, 맞힌 자리에 불꽃이 남습니다.' },
+  { id: 'bladestorm', parts: ['orbit', 'whip'], name: '칼날 채찍', lore: '채찍 끝에 단검을 엮는다', desc: '단검 +4, 채찍 피해량 +30%' },
+  { id: 'heaven', parts: ['aura', 'cross', 'beam'], name: '천상 강림', lore: '성수·십자가·성광, 세 성물이 하늘을 연다', desc: '6초마다 하늘의 빛이 내려 주변의 모든 적에게 큰 피해를 주고 체력을 20 회복합니다.' },
+  { id: 'elements', parts: ['fire', 'frost', 'lightning'], name: '원소 폭주', lore: '불·얼음·번개가 하나로 뒤엉킨다', desc: '세 무기 피해량 +40%, 번개가 떨어진 자리에 불길과 냉기가 퍼집니다.' },
+  { id: 'armory', parts: ['orbit', 'axe', 'whip'], name: '강철 폭풍', lore: '단검·도끼·채찍을 한 몸처럼 다루는 무기의 달인', desc: '세 무기 피해량 +35%, 도끼·채찍 재사용 대기시간 -20%, 단검 회전 속도 +50%' },
 ];
+
+export function synergyReady(s: SynergyDef, weapons: Map<WeaponId, number>) {
+  return s.parts.every((w) => weapons.get(w) === WEAPONS[w].maxLevel);
+}
 
 export interface RelicDef {
   a: PassiveId;
@@ -473,8 +481,12 @@ export function describeChoice(c: Choice, weapons: Map<WeaponId, number>, passiv
       hint = passives.has(def.evo.passive)
         ? `진화 준비 완료 · 보물 상자에서 「${def.evo.name}」`
         : `진화 조건: ${PASSIVES[def.evo.passive].name}`;
-      const syn = SYNERGIES.find((s) => (s.a === c.id && weapons.get(s.b) === WEAPONS[s.b].maxLevel) || (s.b === c.id && weapons.get(s.a) === WEAPONS[s.a].maxLevel));
-      if (syn) hint += ` · 공명 「${syn.name}」 발동`;
+      const next = new Map(weapons).set(c.id, def.maxLevel);
+      const syns = SYNERGIES.filter((s) => s.parts.includes(c.id) && synergyReady(s, next));
+      if (syns.length) hint += ` · 공명 ${syns.map((s) => `「${s.name}」`).join(' ')} 발동`;
+    } else if (c.nextLevel === 1) {
+      const owned = SYNERGIES.filter((s) => s.parts.includes(c.id) && s.parts.some((w) => w !== c.id && weapons.has(w)));
+      if (owned.length) hint = `공명 재료 · ${owned.map((s) => `「${s.name}」`).join(' ')}`;
     }
     return {
       name: def.name,
