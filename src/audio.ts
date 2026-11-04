@@ -24,7 +24,7 @@ function ac(): AudioContext | null {
     comp.attack.value = 0.003;
     comp.release.value = 0.25;
     const master = ctx.createGain();
-    master.gain.value = 0.9;
+    master.gain.value = 0.4;
     comp.connect(master).connect(ctx.destination);
     sfxBus = ctx.createGain();
     sfxBus.gain.value = sfxOn ? SFX_VOL : 0;
