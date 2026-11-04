@@ -1,14 +1,19 @@
 import { setIntensity, sfx } from './audio';
 import { heroSprite, sprites, type Sprite } from './sprites';
 import {
+  LIMIT_BONUS,
   PASSIVES,
+  RELICS,
+  SYNERGIES,
   WEAPONS,
+  fusableRelics,
   rollChoices,
   xpForLevel,
   type CharacterDef,
   type Choice,
   type MetaId,
   type PassiveId,
+  type RelicId,
   type WeaponId,
 } from './upgrades';
 
@@ -56,6 +61,8 @@ interface Enemy {
 }
 
 interface Projectile {
+  kind: 'orb' | 'axe' | 'cross';
+  src: WeaponId;
   x: number;
   y: number;
   vx: number;
@@ -66,6 +73,15 @@ interface Projectile {
   life: number;
   hit: Set<number>;
   evo: boolean;
+  age: number;
+  grav: number;
+  turn: number;
+  dirX: number;
+  dirY: number;
+  speed0: number;
+  span: number;
+  turned: boolean;
+  spin: number;
 }
 
 interface EnemyShot {
@@ -159,8 +175,10 @@ export interface HudState {
   kills: number;
   gold: number;
   boss: number;
-  weapons: [WeaponId, number, boolean][];
+  weapons: [WeaponId, number, boolean, number][];
   passives: [PassiveId, number][];
+  relics: RelicId[];
+  synergies: string[];
 }
 
 export interface RunResult {
@@ -287,6 +305,9 @@ export class Game {
   private weaponTimers = new Map<WeaponId, number>();
   private passives = new Map<PassiveId, number>();
   private damageBy = new Map<WeaponId, number>();
+  private relics = new Set<RelicId>();
+  private limits = new Map<WeaponId, number>();
+  private synergies = new Set<string>();
 
   private time = 0;
   private clock = 0;
@@ -371,6 +392,9 @@ export class Game {
     this.weaponTimers = new Map();
     this.passives = new Map();
     this.damageBy = new Map();
+    this.relics = new Set();
+    this.limits = new Map();
+    this.synergies = new Set();
     this.time = 0;
     this.kills = 0;
     this.gold = 0;
@@ -402,6 +426,11 @@ export class Game {
   applyChoice(c: Choice) {
     if (c.kind === 'weapon') {
       this.weapons.set(c.id, c.nextLevel);
+      this.checkSynergies();
+    } else if (c.kind === 'fuse') {
+      this.fuse(c.id);
+    } else if (c.kind === 'limit') {
+      this.limits.set(c.id, c.nextLevel);
     } else if (c.kind === 'passive') {
       this.passives.set(c.id, c.nextLevel);
       if (c.id === 'vitality') this.refreshMaxHp(20);
@@ -419,8 +448,28 @@ export class Game {
   reroll() {
     if (this.rerolls <= 0 || this.pendingLevelUps <= 0) return;
     this.rerolls--;
-    this.currentChoices = rollChoices(this.weapons, this.passives);
+    this.currentChoices = rollChoices(this.weapons, this.passives, this.relics, this.limits);
     this.onLevelUp(this.currentChoices);
+  }
+
+  private fuse(id: RelicId) {
+    this.relics.add(id);
+    if (id === 'phoenix') this.revives++;
+    this.banner = { text: '유물 합성!', sub: RELICS[id].name, life: 2.4, color: RELICS[id].color };
+    this.flash = 0.4;
+    sfx.evolve();
+  }
+
+  private checkSynergies() {
+    for (const syn of SYNERGIES) {
+      if (this.synergies.has(syn.id)) continue;
+      if (this.weapons.get(syn.a) === WEAPONS[syn.a].maxLevel && this.weapons.get(syn.b) === WEAPONS[syn.b].maxLevel) {
+        this.synergies.add(syn.id);
+        this.banner = { text: `공명 · ${syn.name}`, sub: syn.desc, life: 2.8, color: '#7cc8ff' };
+        this.flash = 0.4;
+        sfx.evolve();
+      }
+    }
   }
 
   closeChest() {
@@ -434,13 +483,14 @@ export class Game {
   }
 
   get build() {
-    return { weapons: this.weapons, passives: this.passives };
+    return { weapons: this.weapons, passives: this.passives, relics: this.relics, synergies: this.synergies, limits: this.limits, evolved: this.evolved };
   }
 
   get stats() {
     return [
       ['최대 체력', `${Math.round(this.player.maxHp)}`],
       ['피해량', `${Math.round(this.might * 100)}%`],
+      ['치명타', `${Math.round(this.critChance * 100)}% · ${this.critMult}배`],
       ['재사용 대기', `${Math.round(this.cdMult * 100)}%`],
       ['공격 범위', `${Math.round(this.areaMult * 100)}%`],
       ['이동 속도', `${Math.round((this.moveSpeed / 165) * 100)}%`],
@@ -471,22 +521,38 @@ export class Game {
     return (1 + 0.1 * this.pl('might')) * (1 + 0.05 * this.meta('might')) * this.ch.might;
   }
   private get cdMult() {
-    return (1 - 0.08 * this.pl('haste')) * this.ch.cd;
+    return (1 - 0.08 * this.pl('haste')) * this.ch.cd * (this.relics.has('hourglass') ? 0.85 : 1);
   }
   private get areaMult() {
-    return 1 + 0.1 * this.pl('area');
+    return (1 + 0.1 * this.pl('area')) * (this.relics.has('compass') ? 1.2 : 1);
   }
   private get moveSpeed() {
-    return 165 * (1 + 0.1 * this.pl('speed')) * (1 + 0.04 * this.meta('speed')) * this.ch.speed;
+    return 165 * (1 + 0.1 * this.pl('speed')) * (1 + 0.04 * this.meta('speed')) * this.ch.speed * (this.relics.has('gale') ? 1.15 : 1);
   }
   private get magnet() {
-    return 70 * (1 + 0.3 * this.pl('magnet')) * (1 + 0.15 * this.meta('magnet'));
+    return 70 * (1 + 0.3 * this.pl('magnet')) * (1 + 0.15 * this.meta('magnet')) * (this.relics.has('compass') ? 2 : 1);
   }
   private get armor() {
-    return this.pl('armor') + this.ch.armor;
+    return this.pl('armor') + this.ch.armor + (this.relics.has('gale') ? 2 : 0);
   }
   private get regen() {
-    return 0.4 * this.pl('regen');
+    return 0.4 * this.pl('regen') + (this.relics.has('phoenix') ? 2 : 0);
+  }
+  private get amount() {
+    return this.pl('amount') + (this.relics.has('hourglass') ? 1 : 0);
+  }
+  private get critChance() {
+    return 0.08 + 0.04 * this.pl('luck') + (this.relics.has('berserk') ? 0.1 : 0);
+  }
+  private get critMult() {
+    return this.relics.has('berserk') ? 3 : 2;
+  }
+  private weaponMult(id: WeaponId) {
+    let m = 1 + LIMIT_BONUS * (this.limits.get(id) ?? 0);
+    if (id === 'aura' && this.synergies.has('purgatory')) m *= 1.5;
+    if (id === 'whip' && this.synergies.has('bladestorm')) m *= 1.3;
+    if ((id === 'axe' || id === 'cross') && this.synergies.has('crusade')) m *= 1.4;
+    return m;
   }
 
   // ---------- input ----------
@@ -657,7 +723,7 @@ export class Game {
   private offerLevelUp() {
     this.paused = true;
     sfx.levelUp();
-    this.currentChoices = rollChoices(this.weapons, this.passives);
+    this.currentChoices = rollChoices(this.weapons, this.passives, this.relics, this.limits);
     this.onLevelUp(this.currentChoices);
   }
 
@@ -673,8 +739,10 @@ export class Game {
       kills: this.kills,
       gold: Math.round(this.gold * (1 + 0.15 * this.meta('gold'))),
       boss: boss ? boss.hp / boss.maxHp : -1,
-      weapons: [...this.weapons.entries()].map(([id, lv]) => [id, lv, this.evolved.has(id)]),
+      weapons: [...this.weapons.entries()].map(([id, lv]) => [id, lv, this.evolved.has(id), this.limits.get(id) ?? 0]),
       passives: [...this.passives.entries()],
+      relics: [...this.relics],
+      synergies: [...this.synergies],
     });
   }
 
@@ -895,8 +963,8 @@ export class Game {
 
   private hitEnemy(e: Enemy, dmg: number, fromX: number, fromY: number, knock: number, src: WeaponId | null) {
     if (e.dead) return;
-    const crit = Math.random() < 0.08;
-    const amount = dmg * this.might * (0.9 + Math.random() * 0.2) * (crit ? 2 : 1);
+    const crit = Math.random() < this.critChance;
+    const amount = dmg * this.might * (src ? this.weaponMult(src) : 1) * (0.9 + Math.random() * 0.2) * (crit ? this.critMult : 1);
     e.hp -= amount;
     e.flash = 0.09;
     if (src) this.damageBy.set(src, (this.damageBy.get(src) ?? 0) + Math.min(amount, e.hp + amount));
@@ -1038,9 +1106,10 @@ export class Game {
   }
 
   private orbitParams(lv: number, evo: boolean) {
-    if (evo) return { count: 8, dmg: 34, speed: 4.2, radius: 150 * this.areaMult, size: 1.6 };
+    const extra = this.amount + (this.synergies.has('bladestorm') ? 4 : 0);
+    if (evo) return { count: 8 + extra, dmg: 34, speed: 4.2, radius: 150 * this.areaMult, size: 1.6 };
     return {
-      count: [1, 2, 2, 3, 3, 4, 4, 5][lv - 1],
+      count: [1, 2, 2, 3, 3, 4, 4, 5][lv - 1] + extra,
       dmg: 10 + (lv >= 3 ? 4 : 0) + (lv >= 5 ? 4 : 0) + (lv >= 7 ? 4 : 0),
       speed: 3 + (lv >= 3 ? 0.6 : 0) + (lv >= 7 ? 0.6 : 0),
       radius: (80 + (lv >= 5 ? 20 : 0)) * this.areaMult,
@@ -1049,7 +1118,7 @@ export class Game {
   }
 
   private auraRadius(lv: number, evo: boolean) {
-    return (60 + 10 * lv + (evo ? 50 : 0)) * this.areaMult;
+    return (60 + 10 * lv + (evo ? 50 : 0)) * this.areaMult * (this.synergies.has('purgatory') ? 1.2 : 1);
   }
 
   private updateWeapons(dt: number) {
@@ -1061,7 +1130,7 @@ export class Game {
       const evo = this.evolved.has('wand');
       const cd = evo ? 0.22 : Math.max(0.35, 1.0 - 0.07 * (wand - 1));
       if (this.tickTimer('wand', dt, cd)) {
-        const count = evo ? 4 : 1 + (wand >= 3 ? 1 : 0) + (wand >= 6 ? 1 : 0);
+        const count = (evo ? 4 : 1 + (wand >= 3 ? 1 : 0) + (wand >= 6 ? 1 : 0)) + this.amount;
         const dmg = 12 + 5 * (Math.min(wand, 2) - 1) + (wand >= 4 ? 5 : 0) + (wand >= 7 ? 5 : 0) + (evo ? 12 : 0);
         const pierce = evo ? 6 : 1 + (wand >= 5 ? 1 : 0) + (wand >= 8 ? 1 : 0);
         const targets = this.nearestEnemies(count, 650);
@@ -1081,18 +1150,9 @@ export class Game {
             dx = Math.cos(a);
             dy = Math.sin(a);
           }
-          this.projectiles.push({
-            x: p.x,
-            y: p.y - 6,
-            vx: dx * (evo ? 620 : 460),
-            vy: dy * (evo ? 620 : 460),
-            r: (wand >= 8 ? 8 : 6) * area * (evo ? 1.3 : 1),
-            dmg,
-            pierce,
-            life: 1.6,
-            hit: new Set(),
-            evo,
-          });
+          this.projectiles.push(
+            this.mkProjectile('orb', 'wand', p.x, p.y - 6, dx * (evo ? 620 : 460), dy * (evo ? 620 : 460), (wand >= 8 ? 8 : 6) * area * (evo ? 1.3 : 1), dmg, pierce, 1.6, evo),
+          );
         }
         sfx.shoot();
       }
@@ -1134,7 +1194,7 @@ export class Game {
       const evo = this.evolved.has('lightning');
       const cd = evo ? 0.8 : Math.max(0.9, 2.4 - 0.15 * lightning);
       if (this.tickTimer('lightning', dt, cd)) {
-        const strikes = 1 + (lightning >= 3 ? 1 : 0) + (lightning >= 5 ? 1 : 0) + (lightning >= 7 ? 1 : 0) + (lightning >= 8 ? 1 : 0) + (evo ? 4 : 0);
+        const strikes = 1 + (lightning >= 3 ? 1 : 0) + (lightning >= 5 ? 1 : 0) + (lightning >= 7 ? 1 : 0) + (lightning >= 8 ? 1 : 0) + (evo ? 4 : 0) + this.amount;
         const dmg = (25 + 10 * (lightning - 1)) * (evo ? 1.6 : 1);
         const r = (lightning >= 6 ? 55 : 40) * area * (evo ? 1.4 : 1);
         const vw = this.viewW / 2;
@@ -1143,15 +1203,7 @@ export class Game {
         let struck = 0;
         for (let i = 0; i < strikes && visible.length > 0; i++) {
           const t = visible.splice(Math.floor(Math.random() * visible.length), 1)[0];
-          const tx = t.x;
-          const ty = t.y;
-          this.query(tx, ty, r, (e) => this.hitEnemy(e, dmg, tx, ty, 120, 'lightning'));
-          this.fx.push({ kind: 'bolt', x: tx, y: ty, life: 0.28, max: 0.28, dir: 0, len: 0, r, color: '#d9c2ff', seed: Math.random() * 1000 });
-          for (let k = 0; k < 10; k++) {
-            const a = Math.random() * Math.PI * 2;
-            const s = 80 + Math.random() * 200;
-            this.particles.push({ x: tx, y: ty, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.3, max: 0.3, color: '#e8d8ff', size: 2, grav: 0, glow: true });
-          }
+          this.strike(t.x, t.y, r, dmg, 'lightning');
           struck++;
         }
         if (struck) {
@@ -1192,7 +1244,7 @@ export class Game {
       const evo = this.evolved.has('fire');
       const cd = fire >= 7 ? 2.4 : 3;
       if (this.tickTimer('fire', dt, cd)) {
-        const count = 1 + (fire >= 4 ? 1 : 0) + (fire >= 8 ? 1 : 0) + (evo ? 2 : 0);
+        const count = 1 + (fire >= 4 ? 1 : 0) + (fire >= 8 ? 1 : 0) + (evo ? 2 : 0) + this.amount;
         const r = (45 + (fire >= 3 ? 12 : 0) + (fire >= 6 ? 12 : 0)) * area * (evo ? 1.5 : 1);
         const dps = (16 + (fire >= 2 ? 8 : 0) + (fire >= 5 ? 8 : 0) + (fire >= 7 ? 8 : 0)) * (evo ? 1.6 : 1);
         const dur = 2.6 + (fire >= 2 ? 0.5 : 0) + (fire >= 5 ? 0.5 : 0) + (evo ? 1 : 0);
@@ -1207,14 +1259,136 @@ export class Game {
         sfx.fire();
       }
     }
+
+    const crusade = this.synergies.has('crusade') ? 1.25 : 1;
+
+    const axe = this.weapons.get('axe');
+    if (axe) {
+      const evo = this.evolved.has('axe');
+      if (this.tickTimer('axe', dt, evo ? 1.3 : 1.4)) {
+        const dmg = (26 + (axe >= 2 ? 6 : 0) + (axe >= 3 ? 10 : 0) + (axe >= 6 ? 10 : 0) + (axe >= 8 ? 10 : 0)) * (evo ? 1.5 : 1);
+        const size = (axe >= 8 ? 1.3 : 1) * (evo ? 1.4 : 1) * area * crusade;
+        if (evo) {
+          const n = 8 + this.amount * 2;
+          const off = this.clock * 1.7;
+          for (let i = 0; i < n; i++) {
+            const a = off + (i / n) * Math.PI * 2;
+            const pr = this.mkProjectile('axe', 'axe', p.x, p.y, Math.cos(a) * 300, Math.sin(a) * 300, 14 * size, dmg, 999, 2.4, true);
+            pr.turn = 1.4;
+            this.projectiles.push(pr);
+          }
+        } else {
+          const n = 2 + (axe >= 5 ? 1 : 0) + this.amount;
+          const pierce = 3 + (axe >= 4 ? 2 : 0) + (axe >= 7 ? 2 : 0);
+          for (let i = 0; i < n; i++) {
+            const vx = p.facing * 60 + (i - (n - 1) / 2) * 140 + (Math.random() - 0.5) * 40;
+            const pr = this.mkProjectile('axe', 'axe', p.x, p.y - 10, vx, -560 - Math.random() * 80, 14 * size, dmg, pierce, 2, false);
+            pr.grav = 1100;
+            this.projectiles.push(pr);
+          }
+        }
+        sfx.whip();
+      }
+    }
+
+    const cross = this.weapons.get('cross');
+    if (cross) {
+      const evo = this.evolved.has('cross');
+      if (this.tickTimer('cross', dt, evo ? 1.4 : 1.8)) {
+        const dmg = (18 + (cross >= 2 ? 10 : 0) + (cross >= 5 ? 10 : 0) + (cross >= 7 ? 10 : 0)) * (evo ? 1.6 : 1);
+        const size = (cross >= 8 ? 1.3 : 1) * (evo ? 1.8 : 1) * area * crusade;
+        const speed = cross >= 4 ? 600 : 520;
+        const span = cross >= 4 ? 1.6 : 1.4;
+        const n = (evo ? 4 : 1 + (cross >= 3 ? 1 : 0) + (cross >= 6 ? 1 : 0)) + this.amount;
+        const targets = this.nearestEnemies(n, 600);
+        for (let i = 0; i < n; i++) {
+          let a: number;
+          if (evo) a = this.clock * 0.9 + (i / n) * Math.PI * 2;
+          else if (targets[i]) a = Math.atan2(targets[i].y - p.y, targets[i].x - p.x);
+          else a = Math.atan2(p.dirY, p.dirX) + (i - (n - 1) / 2) * 0.5;
+          this.projectiles.push(this.mkProjectile('cross', 'cross', p.x, p.y - 4, Math.cos(a) * speed, Math.sin(a) * speed, 13 * size, dmg, 999, span * 1.15, evo));
+        }
+        sfx.shoot();
+      }
+    }
+  }
+
+  private strike(tx: number, ty: number, r: number, dmg: number, src: WeaponId) {
+    this.query(tx, ty, r, (e) => this.hitEnemy(e, dmg, tx, ty, 120, src));
+    this.fx.push({ kind: 'bolt', x: tx, y: ty, life: 0.28, max: 0.28, dir: 0, len: 0, r, color: '#d9c2ff', seed: Math.random() * 1000 });
+    for (let k = 0; k < 10 && this.particles.length < 800; k++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 80 + Math.random() * 200;
+      this.particles.push({ x: tx, y: ty, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.3, max: 0.3, color: '#e8d8ff', size: 2, grav: 0, glow: true });
+    }
+  }
+
+  private mkProjectile(
+    kind: Projectile['kind'],
+    src: WeaponId,
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+    r: number,
+    dmg: number,
+    pierce: number,
+    life: number,
+    evo: boolean,
+  ): Projectile {
+    const sp = Math.hypot(vx, vy) || 1;
+    return {
+      kind,
+      src,
+      x,
+      y,
+      vx,
+      vy,
+      r,
+      dmg,
+      pierce,
+      life,
+      hit: new Set(),
+      evo,
+      age: 0,
+      grav: 0,
+      turn: 0,
+      dirX: vx / sp,
+      dirY: vy / sp,
+      speed0: sp,
+      span: life,
+      turned: false,
+      spin: Math.random() * 6,
+    };
   }
 
   private updateProjectiles(dt: number) {
+    const storm = this.synergies.has('storm');
     for (const pr of this.projectiles) {
+      pr.age += dt;
+      pr.spin += dt * (pr.kind === 'orb' ? 0 : 14);
+      if (pr.kind === 'axe') {
+        pr.vy += pr.grav * dt;
+        if (pr.turn) {
+          const c = Math.cos(pr.turn * dt);
+          const sn = Math.sin(pr.turn * dt);
+          const vx = pr.vx * c - pr.vy * sn;
+          pr.vy = pr.vx * sn + pr.vy * c;
+          pr.vx = vx;
+        }
+      } else if (pr.kind === 'cross') {
+        const f = pr.speed0 * (1 - (2 * pr.age) / pr.span);
+        pr.vx = pr.dirX * f;
+        pr.vy = pr.dirY * f;
+        if (!pr.turned && f < 0) {
+          pr.turned = true;
+          pr.hit.clear();
+        }
+      }
       pr.x += pr.vx * dt;
       pr.y += pr.vy * dt;
       pr.life -= dt;
-      if (this.particles.length < 700 && Math.random() < 0.6) {
+      if (pr.kind === 'orb' && this.particles.length < 700 && Math.random() < 0.6) {
         this.particles.push({ x: pr.x, y: pr.y, vx: 0, vy: 0, life: 0.18, max: 0.18, color: pr.evo ? '#ffe9a0' : '#7cc8ff', size: 3, grav: 0, glow: true });
       }
       if (pr.pierce <= 0) continue;
@@ -1222,7 +1396,8 @@ export class Game {
         if (pr.pierce <= 0 || pr.hit.has(e.id)) return;
         pr.hit.add(e.id);
         pr.pierce--;
-        this.hitEnemy(e, pr.dmg, pr.x - pr.vx, pr.y - pr.vy, 150, 'wand');
+        this.hitEnemy(e, pr.dmg, pr.x - pr.vx * 0.05, pr.y - pr.vy * 0.05, 150, pr.src);
+        if (storm && pr.src === 'wand' && Math.random() < 0.25) this.strike(e.x, e.y, 40 * this.areaMult, 30, 'wand');
       });
     }
     this.projectiles = this.projectiles.filter((pr) => pr.life > 0 && pr.pierce > 0);
@@ -1341,6 +1516,15 @@ export class Game {
         rewards.push({ icon: id, name: WEAPONS[id].evo.name, desc: WEAPONS[id].evo.desc, color: '#ffd36b', evo: true });
         continue;
       }
+      const fusable = fusableRelics(this.passives, this.relics);
+      if (fusable.length) {
+        const id = fusable[0];
+        this.relics.add(id);
+        if (id === 'phoenix') this.revives++;
+        anyEvo = true;
+        rewards.push({ icon: `relic-${id}`, name: `유물 합성 · ${RELICS[id].name}`, desc: RELICS[id].desc, color: RELICS[id].color, evo: true });
+        continue;
+      }
       const ups: (['w', WeaponId] | ['p', PassiveId])[] = [];
       for (const [id, lv] of this.weapons) if (lv < WEAPONS[id].maxLevel) ups.push(['w', id]);
       for (const [id, lv] of this.passives) if (lv < PASSIVES[id].maxLevel) ups.push(['p', id]);
@@ -1349,6 +1533,7 @@ export class Game {
         if (k === 'w') {
           const lv = this.weapons.get(id)! + 1;
           this.weapons.set(id, lv);
+          this.checkSynergies();
           rewards.push({ icon: id, name: WEAPONS[id].name, desc: `LV ${lv} · ${WEAPONS[id].levels[lv - 1]}`, color: WEAPONS[id].color, evo: false });
         } else {
           const lv = this.passives.get(id)! + 1;
@@ -1713,10 +1898,40 @@ export class Game {
   private drawProjectiles() {
     const ctx = this.ctx;
     for (const pr of this.projectiles) {
-      ctx.fillStyle = pr.evo ? '#fff6d0' : '#e8f6ff';
-      ctx.beginPath();
-      ctx.arc(pr.x, pr.y, pr.r * 0.7, 0, Math.PI * 2);
-      ctx.fill();
+      if (pr.kind === 'orb') {
+        ctx.fillStyle = pr.evo ? '#fff6d0' : '#e8f6ff';
+        ctx.beginPath();
+        ctx.arc(pr.x, pr.y, pr.r * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
+      const k = pr.r / 14;
+      ctx.save();
+      ctx.translate(pr.x, pr.y);
+      ctx.rotate(pr.spin);
+      ctx.scale(k, k);
+      if (pr.kind === 'axe') {
+        ctx.fillStyle = '#0c0910';
+        ctx.fillRect(-3, -14, 6, 28);
+        ctx.fillStyle = '#8a5a2a';
+        ctx.fillRect(-2, -13, 4, 26);
+        ctx.fillStyle = '#0c0910';
+        ctx.fillRect(1, -15, 13, 14);
+        ctx.fillStyle = pr.evo ? '#ffb0b8' : '#c8ccd8';
+        ctx.fillRect(2, -14, 11, 12);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(10, -14, 3, 12);
+      } else {
+        ctx.fillStyle = '#0c0910';
+        ctx.fillRect(-4, -15, 8, 30);
+        ctx.fillRect(-12, -7, 24, 8);
+        ctx.fillStyle = pr.evo ? '#fff3c0' : '#e8f0ff';
+        ctx.fillRect(-3, -14, 6, 28);
+        ctx.fillRect(-11, -6, 22, 6);
+        ctx.fillStyle = '#ffd36b';
+        ctx.fillRect(-2, -5, 4, 4);
+      }
+      ctx.restore();
     }
   }
 
@@ -1735,8 +1950,9 @@ export class Game {
   private drawGlows() {
     const ctx = this.ctx;
     for (const pr of this.projectiles) {
-      const g = glow(pr.evo ? 'rgba(255,220,120,0.9)' : 'rgba(110,190,255,0.9)');
-      const s = pr.r * 6;
+      if (pr.kind === 'axe') continue;
+      const g = glow(pr.kind === 'cross' ? 'rgba(200,220,255,0.18)' : pr.evo ? 'rgba(255,220,120,0.9)' : 'rgba(110,190,255,0.9)');
+      const s = pr.r * (pr.kind === 'cross' ? 2.6 : 6);
       ctx.drawImage(g, pr.x - s / 2, pr.y - s / 2, s, s);
     }
     for (const z of this.zones) {
@@ -1872,7 +2088,7 @@ export class Game {
       if (d.kind === 'candle') hole(d.x, d.y + 20, 120 + Math.sin(this.clock * 9 + d.x) * 8, 0.8);
     }
     for (const z of this.zones) hole(z.x, z.y, z.r * 2.2, 0.9);
-    for (const pr of this.projectiles) hole(pr.x, pr.y, 60, 0.5);
+    for (const pr of this.projectiles) if (pr.kind !== 'axe') hole(pr.x, pr.y, 60, 0.5);
     for (const f of this.fx) {
       if (f.kind === 'bolt') hole(f.x, f.y, 260 * (f.life / f.max), 1);
       if (f.kind === 'nova') hole(f.x, f.y, f.r * 1.5, f.life / f.max);
